@@ -5,9 +5,8 @@ const router = express.Router();
 // GET /api/reports
 router.get('/reports', async (req, res) => {
     try {
-        // This query joins reports with users and branches to get all necessary info.
-        // It provides a static 'N/A' value for 'department' as this column doesn't exist in the 'users' table.
-        // FIX: The column for report details is 'details' not 'report_data'.
+        // CONFIRMED: The correct column name for report details is 'content'.
+        // This query now reads from `r.content` and renames it to `details` for the frontend.
         const query = `
             SELECT 
                 r.id,
@@ -18,7 +17,7 @@ router.get('/reports', async (req, res) => {
                 r.report_type AS type,
                 r.created_at AS date,
                 r.status,
-                r.details
+                r.content AS details
             FROM reports r
             JOIN users u ON r.user_id = u.id
             JOIN branches b ON r.branch_id = b.id
@@ -27,18 +26,18 @@ router.get('/reports', async (req, res) => {
         
         const [rows] = await db.query(query);
 
-        // The 'details' column is stored as a JSON string in MySQL.
-        // We need to parse it into an object for each report.
         const reports = rows.map(report => {
             let parsedDetails = report.details;
             try {
+                // The 'details' (originally 'content') column is stored as a JSON string.
+                // We need to parse it into an object for each report.
                 if (typeof report.details === 'string') {
                     parsedDetails = JSON.parse(report.details);
                 }
             } catch (e) {
                 console.error(`Failed to parse details for report ID ${report.id}:`, e);
-                // Keep details as is or set to an empty object if parsing fails
-                parsedDetails = report.details; 
+                // If parsing fails, return an object with the raw string to avoid crashing.
+                parsedDetails = { raw: report.details }; 
             }
             return {
                 ...report,
