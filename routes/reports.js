@@ -5,10 +5,9 @@ const router = express.Router();
 // GET /api/reports
 router.get('/reports', async (req, res) => {
     try {
-        // This query joins reports with users and branches to get all necessary info
-        // and formats the column names to match the frontend's camelCase convention.
-        // FIX: The 'department' column does not exist in the 'users' table. 
-        // A static value 'N/A' is now provided to prevent query failure.
+        // This query joins reports with users and branches to get all necessary info.
+        // It provides a static 'N/A' value for 'department' to prevent query failure,
+        // as this column does not exist in the 'users' table.
         const query = `
             SELECT 
                 r.id,
@@ -30,10 +29,22 @@ router.get('/reports', async (req, res) => {
 
         // The 'details' column is stored as a JSON string in MySQL.
         // We need to parse it into an object for each report.
-        const reports = rows.map(report => ({
-            ...report,
-            details: typeof report.details === 'string' ? JSON.parse(report.details) : report.details
-        }));
+        const reports = rows.map(report => {
+            let parsedDetails = report.details;
+            try {
+                if (typeof report.details === 'string') {
+                    parsedDetails = JSON.parse(report.details);
+                }
+            } catch (e) {
+                console.error(`Failed to parse details for report ID ${report.id}:`, e);
+                // Keep details as is or set to an empty object if parsing fails
+                parsedDetails = report.details; 
+            }
+            return {
+                ...report,
+                details: parsedDetails
+            };
+        });
 
         res.json(reports);
 
