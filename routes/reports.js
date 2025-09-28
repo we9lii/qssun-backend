@@ -6,8 +6,8 @@ const router = express.Router();
 router.get('/reports', async (req, res) => {
     try {
         // This query joins reports with users and branches to get all necessary info.
-        // It provides a static 'N/A' value for 'department' to prevent query failure,
-        // as this column does not exist in the 'users' table.
+        // It provides a static 'N/A' value for 'department' as this column doesn't exist in the 'users' table.
+        // FIX: The column for report details is 'details' not 'report_data'.
         const query = `
             SELECT 
                 r.id,
@@ -18,7 +18,7 @@ router.get('/reports', async (req, res) => {
                 r.report_type AS type,
                 r.created_at AS date,
                 r.status,
-                r.report_data AS details
+                r.details
             FROM reports r
             JOIN users u ON r.user_id = u.id
             JOIN branches b ON r.branch_id = b.id
