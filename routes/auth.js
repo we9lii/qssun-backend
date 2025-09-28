@@ -2,6 +2,18 @@ const express = require('express');
 const db = require('../db');
 const router = express.Router();
 
+/**
+ * Helper function to capitalize the first letter of a string.
+ * This ensures roles like "admin" from the DB match the "Admin" enum on the frontend.
+ * @param {string} s The string to capitalize.
+ * @returns {string} The capitalized string.
+ */
+const capitalize = (s) => {
+  if (typeof s !== 'string' || s.length === 0) return '';
+  return s.charAt(0).toUpperCase() + s.slice(1);
+};
+
+
 // POST /api/login
 router.post('/login', async (req, res) => {
     const { employeeId, password } = req.body;
@@ -11,6 +23,7 @@ router.post('/login', async (req, res) => {
     }
 
     try {
+        // 1. Find the user by username (which is the employeeId)
         const [userRows] = await db.query('SELECT * FROM users WHERE username = ?', [employeeId]);
         
         if (userRows.length === 0) {
@@ -19,11 +32,13 @@ router.post('/login', async (req, res) => {
         
         const user = userRows[0];
 
+        // 2. Check the password (in a real app, use bcrypt.compare)
         if (user.password !== password) {
             console.warn('Security Warning: Storing and comparing passwords in plain text is insecure. Use a hashing library like bcrypt.');
             return res.status(401).json({ message: 'Incorrect password.' });
         }
         
+        // 3. Get the branch name
         let branchName = 'N/A';
         if (user.branch_id) {
             const [branchRows] = await db.query('SELECT name FROM branches WHERE id = ?', [user.branch_id]);
@@ -32,16 +47,17 @@ router.post('/login', async (req, res) => {
             }
         }
         
+        // 4. Construct the user object for the frontend
         const userForFrontend = {
             id: user.id.toString(),
             employeeId: user.username,
             name: user.full_name,
             email: user.email,
             phone: user.phone,
-            role: user.role,
+            role: capitalize(user.role), // FIX: Capitalize role for frontend compatibility
             branch: branchName,
-            department: user.department || 'N/A',
-            position: user.position || 'N/A',
+            department: user.department || 'N/A', // Add default if not in DB
+            position: user.position || 'N/A', // Add default if not in DB
             joinDate: user.created_at,
             employeeType: user.employee_type || 'Technician',
             hasImportExportPermission: !!user.has_import_export_permission,
