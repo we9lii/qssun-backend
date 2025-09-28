@@ -7,13 +7,15 @@ router.get('/reports', async (req, res) => {
     try {
         // This query joins reports with users and branches to get all necessary info
         // and formats the column names to match the frontend's camelCase convention.
+        // FIX: The 'department' column does not exist in the 'users' table. 
+        // A static value 'N/A' is now provided to prevent query failure.
         const query = `
             SELECT 
                 r.id,
                 u.username AS employeeId,
                 u.full_name AS employeeName,
                 b.name AS branch,
-                u.department,
+                'N/A' AS department,
                 r.report_type AS type,
                 r.created_at AS date,
                 r.status,
