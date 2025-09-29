@@ -94,7 +94,7 @@ router.post('/workflows', async (req, res) => {
 // PUT /api/workflows/:requestId - Updates a workflow request
 router.put('/workflows/:requestId', async (req, res) => {
     const { requestId } = req.params;
-    const { currentStageId, stageHistory, lastModified } = req.body;
+    const { currentStageId, stageHistory } = req.body;
 
     if (!currentStageId || !stageHistory) {
         return res.status(400).json({ message: 'Missing required fields for update.' });
@@ -104,7 +104,6 @@ router.put('/workflows/:requestId', async (req, res) => {
         const updatePayload = {
             current_stage_id: currentStageId,
             stage_history: JSON.stringify(stageHistory),
-            last_modified: lastModified,
         };
 
         await db.query('UPDATE workflow_requests SET ? WHERE id = ?', [updatePayload, requestId]);
@@ -117,5 +116,16 @@ router.put('/workflows/:requestId', async (req, res) => {
     }
 });
 
+// DELETE /api/workflows/:requestId - Deletes a workflow request
+router.delete('/workflows/:requestId', async (req, res) => {
+    const { requestId } = req.params;
+    try {
+        await db.query('DELETE FROM workflow_requests WHERE id = ?', [requestId]);
+        res.status(200).json({ message: 'Workflow request deleted successfully' });
+    } catch (error) {
+        console.error(`Error deleting workflow request ${requestId}:`, error);
+        res.status(500).json({ message: 'Internal server error while deleting workflow request.' });
+    }
+});
 
 module.exports = router;

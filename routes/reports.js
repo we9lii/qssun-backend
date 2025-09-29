@@ -56,8 +56,6 @@ router.post('/reports', async (req, res) => {
         type,
         status,
         details,
-        employeeName,
-        department
     } = req.body;
 
     if (!employeeId || !type || !details) {
@@ -118,6 +116,18 @@ router.post('/reports', async (req, res) => {
     } catch (error) {
         console.error('Error creating report:', error);
         res.status(500).json({ message: 'An internal server error occurred while creating the report.' });
+    }
+});
+
+// DELETE /api/reports/:reportId - Deletes a report
+router.delete('/reports/:reportId', async (req, res) => {
+    const { reportId } = req.params;
+    try {
+        await db.query('DELETE FROM reports WHERE id = ?', [reportId]);
+        res.status(200).json({ message: 'Report deleted successfully' });
+    } catch (error) {
+        console.error(`Error deleting report ${reportId}:`, error);
+        res.status(500).json({ message: 'Internal server error while deleting report.' });
     }
 });
 
