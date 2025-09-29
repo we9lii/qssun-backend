@@ -91,5 +91,31 @@ router.post('/workflows', async (req, res) => {
     }
 });
 
+// PUT /api/workflows/:requestId - Updates a workflow request
+router.put('/workflows/:requestId', async (req, res) => {
+    const { requestId } = req.params;
+    const { currentStageId, stageHistory, lastModified } = req.body;
+
+    if (!currentStageId || !stageHistory) {
+        return res.status(400).json({ message: 'Missing required fields for update.' });
+    }
+
+    try {
+        const updatePayload = {
+            current_stage_id: currentStageId,
+            stage_history: JSON.stringify(stageHistory),
+            last_modified: lastModified,
+        };
+
+        await db.query('UPDATE workflow_requests SET ? WHERE id = ?', [updatePayload, requestId]);
+
+        res.status(200).json({ message: 'Workflow updated successfully.' });
+
+    } catch (error) {
+        console.error(`Error updating workflow request ${requestId}:`, error);
+        res.status(500).json({ message: 'Internal server error while updating workflow.' });
+    }
+});
+
 
 module.exports = router;
