@@ -1,3 +1,4 @@
+
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -10,7 +11,12 @@ const branchRoutes = require('./routes/branches');
 const app = express();
 
 // Middleware
-app.use(cors());
+// FIX: Configure CORS to explicitly allow the frontend origin.
+const corsOptions = {
+  origin: 'https://qrs.qssun.solar',
+  optionsSuccessStatus: 200 // some legacy browsers (IE11, various SmartTVs) choke on 204
+};
+app.use(cors(corsOptions));
 app.use(express.json());
 
 // Routes
