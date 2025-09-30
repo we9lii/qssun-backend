@@ -1,7 +1,8 @@
 const express = require('express');
 const multer = require('multer');
-const db = require('../db');
-const { supabase } = require('../supabaseClient');
+const path = require('path');
+const db = require(path.join(__dirname, '..', 'db'));
+const { supabase } = require(path.join(__dirname, '..', 'supabaseClient'));
 const router = express.Router();
 
 // تهيئة Multer لتخزين الملفات في الذاكرة بدلاً من القرص

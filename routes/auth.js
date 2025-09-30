@@ -1,18 +1,7 @@
 const express = require('express');
-const db = require('../db');
+const path = require('path');
+const db = require(path.join(__dirname, '..', 'db'));
 const router = express.Router();
-
-/**
- * Helper function to capitalize the first letter of a string.
- * This ensures roles like "admin" from the DB match the "Admin" enum on the frontend.
- * @param {string} s The string to capitalize.
- * @returns {string} The capitalized string.
- */
-const capitalize = (s) => {
-  if (typeof s !== 'string' || s.length === 0) return '';
-  return s.charAt(0).toUpperCase() + s.slice(1);
-};
-
 
 // POST /api/login
 router.post('/login', async (req, res) => {
@@ -54,7 +43,7 @@ router.post('/login', async (req, res) => {
             name: user.full_name,
             email: user.email,
             phone: user.phone,
-            role: capitalize(user.role), // FIX: Capitalize role for frontend compatibility
+            role: user.role, // Assuming role is stored as 'Admin' or 'Employee'
             branch: branchName,
             department: user.department || 'N/A', // Add default if not in DB
             position: user.position || 'N/A', // Add default if not in DB
