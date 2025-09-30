@@ -26,7 +26,7 @@ app.use('/api', authRoutes);
 app.use('/api', reportRoutes);
 app.use('/api', userRoutes);
 app.use('/api', branchRoutes);
-app.use('/api', workflowRoutes);
+app.use('/api', workflowsRoutes);
 
 
 app.get('/', (req, res) => {
