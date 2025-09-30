@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
-const db = require('../db.js');
+const path = require('path');
+const db = require(path.resolve(__dirname, '../db.js'));
 
 // GET /api/workflow-requests
 router.get('/workflow-requests', async (req, res) => {
