@@ -11,7 +11,7 @@ const userRoutes = require('./routes/users.js');
 console.log("-> users.js loaded.");
 const branchRoutes = require('./routes/branches.js');
 console.log("-> branches.js loaded.");
-const workflowRoutes = require('./routes/workflow.js');
+const workflowsRoutes = require('./routes/workflows.js');
 console.log("-> workflows.js loaded.");
 console.log("All routes loaded successfully.");
 
