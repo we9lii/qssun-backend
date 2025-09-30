@@ -1,14 +1,12 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const path = require('path');
 
-// استخدام path.resolve لضمان مسارات مطلقة وموثوقة
-const authRoutes = require(path.resolve(__dirname, 'routes/auth.js'));
-const reportRoutes = require(path.resolve(__dirname, 'routes/reports.js'));
-const userRoutes = require(path.resolve(__dirname, 'routes/users.js'));
-const branchRoutes = require(path.resolve(__dirname, 'routes/branches.js'));
-const workflowRoutes = require(path.resolve(__dirname, 'routes/workflow.js'));
+const authRoutes = require('./routes/auth.js');
+const reportRoutes = require('./routes/reports.js');
+const userRoutes = require('./routes/users.js');
+const branchRoutes = require('./routes/branches.js');
+const workflowRoutes = require('./routes/workflow.js');
 
 const app = express();
 
