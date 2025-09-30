@@ -30,6 +30,33 @@ const uploadFileToSupabase = async (file, employeeId) => {
     return data.publicUrl;
 };
 
+// GET /api/reports - جلب كل التقارير
+router.get('/reports', async (req, res) => {
+    try {
+        const [rows] = await db.query('SELECT * FROM reports ORDER BY date DESC');
+
+        const reports = rows.map(report => ({
+            id: report.id.toString(),
+            employeeId: report.employee_id,
+            employeeName: report.employee_name,
+            branch: report.branch,
+            department: report.department,
+            type: report.type,
+            date: report.date,
+            status: report.status,
+            // Safely parse JSON fields
+            details: report.details ? JSON.parse(report.details) : {},
+            evaluation: report.evaluation ? JSON.parse(report.evaluation) : undefined,
+            modifications: report.modifications ? JSON.parse(report.modifications) : undefined,
+        }));
+
+        res.json(reports);
+    } catch (error) {
+        console.error('Error fetching reports:', error);
+        res.status(500).json({ message: 'An internal server error occurred while fetching reports.' });
+    }
+});
+
 
 // POST /api/reports - إنشاء تقرير جديد مع رفع المرفقات إلى Supabase
 router.post('/reports', upload.any(), async (req, res) => {
