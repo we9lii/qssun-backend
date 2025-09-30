@@ -12,7 +12,7 @@ console.log("-> users.js loaded.");
 const branchRoutes = require('./routes/branches.js');
 console.log("-> branches.js loaded.");
 const workflowRoutes = require('./routes/workflow.js');
-console.log("-> workflow.js loaded.");
+console.log("-> workflows.js loaded.");
 console.log("All routes loaded successfully.");
 
 const app = express();
