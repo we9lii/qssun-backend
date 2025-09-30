@@ -1,115 +1,93 @@
 const express = require('express');
+const multer = require('multer');
 const db = require('../db');
+const { supabase } = require('../supabaseClient');
 const router = express.Router();
 
-// GET /api/reports - Fetches all reports
-router.get('/reports', async (req, res) => {
-    try {
-        const query = `
-            SELECT 
-                r.id,
-                u.username AS employeeId,
-                u.full_name AS employeeName,
-                b.name AS branch,
-                'N/A' AS department,
-                r.report_type AS type,
-                r.created_at AS date,
-                r.status,
-                r.content AS details
-            FROM reports r
-            JOIN users u ON r.user_id = u.id
-            JOIN branches b ON r.branch_id = b.id
-            ORDER BY r.created_at DESC;
-        `;
-        
-        const [rows] = await db.query(query);
+// تهيئة Multer لتخزين الملفات في الذاكرة بدلاً من القرص
+const storage = multer.memoryStorage();
+const upload = multer({ storage: storage });
 
-        const reports = rows.map(report => {
-            let parsedDetails = report.details;
-            try {
-                if (typeof report.details === 'string') {
-                    parsedDetails = JSON.parse(report.details);
-                }
-            } catch (e) {
-                console.error(`Failed to parse details for report ID ${report.id}:`, e);
-                parsedDetails = { raw: report.details, error: "Invalid JSON" }; 
-            }
-            return {
-                ...report,
-                details: parsedDetails
-            };
+// دالة مساعد لرفع الملف إلى Supabase
+const uploadFileToSupabase = async (file, employeeId) => {
+    const filePath = `public/${employeeId}/${Date.now()}-${file.originalname}`;
+    
+    const { error } = await supabase.storage
+        .from('report-attachments')
+        .upload(filePath, file.buffer, {
+            contentType: file.mimetype,
+            upsert: false,
         });
 
-        res.json(reports);
-
-    } catch (error) {
-        console.error('Error fetching reports:', error);
-        res.status(500).json({ message: 'An internal server error occurred while fetching reports.' });
-    }
-});
-
-// POST /api/reports - Creates a new report
-router.post('/reports', async (req, res) => {
-    const {
-        employeeId,
-        branch,
-        type,
-        status,
-        details,
-    } = req.body;
-
-    if (!employeeId || !type || !details) {
-        return res.status(400).json({ message: 'Missing required report data.' });
+    if (error) {
+        throw error;
     }
 
+    const { data } = supabase.storage
+        .from('report-attachments')
+        .getPublicUrl(filePath);
+
+    return data.publicUrl;
+};
+
+
+// POST /api/reports - إنشاء تقرير جديد مع رفع المرفقات إلى Supabase
+router.post('/reports', upload.any(), async (req, res) => {
     try {
-        // Find user_id from employeeId (username)
-        const [userRows] = await db.query('SELECT id FROM users WHERE username = ?', [employeeId]);
-        if (userRows.length === 0) {
-            return res.status(404).json({ message: 'User not found.' });
+        if (!req.body.reportData) {
+            return res.status(400).json({ message: 'reportData is missing.' });
         }
-        const userId = userRows[0].id;
+        
+        const reportData = JSON.parse(req.body.reportData);
+        const details = reportData.details || {};
+        const employeeId = reportData.employeeId;
 
-        // Find branch_id from branch name
-        const [branchRows] = await db.query('SELECT id FROM branches WHERE name = ?', [branch]);
-        if (branchRows.length === 0) {
-            return res.status(404).json({ message: 'Branch not found.' });
+        if (req.files && req.files.length > 0) {
+            const beforeImagesFiles = req.files.filter(f => f.fieldname === 'beforeImages');
+            const afterImagesFiles = req.files.filter(f => f.fieldname === 'afterImages');
+            
+            const beforeImageUrls = await Promise.all(
+                beforeImagesFiles.map(file => uploadFileToSupabase(file, employeeId))
+            );
+            const afterImageUrls = await Promise.all(
+                afterImagesFiles.map(file => uploadFileToSupabase(file, employeeId))
+            );
+
+            if (reportData.type === 'Maintenance') {
+                details.beforeImages = beforeImageUrls;
+                details.afterImages = afterImageUrls;
+            }
         }
-        const branchId = branchRows[0].id;
 
-        // Prepare the report for insertion
-        const newReport = {
-            user_id: userId,
-            branch_id: branchId,
-            report_type: type,
-            content: JSON.stringify(details), // Stringify the details object
-            status: status,
+        const newReportForDb = {
+            employee_id: reportData.employeeId,
+            employee_name: reportData.employeeName,
+            branch: reportData.branch,
+            department: reportData.department,
+            type: reportData.type,
+            date: reportData.date,
+            status: reportData.status,
+            details: JSON.stringify(details),
         };
 
-        // Insert the report and get the new ID
-        const [result] = await db.query('INSERT INTO reports SET ?', newReport);
-        const newReportId = result.insertId;
+        const [result] = await db.query('INSERT INTO reports SET ?', newReportForDb);
+        const insertId = result.insertId;
 
-        // Fetch the complete report to return to the frontend
-        const [createdReportRows] = await db.query(`
-             SELECT 
-                r.id,
-                u.username AS employeeId,
-                u.full_name AS employeeName,
-                b.name AS branch,
-                'N/A' AS department,
-                r.report_type AS type,
-                r.created_at AS date,
-                r.status,
-                r.content AS details
-            FROM reports r
-            JOIN users u ON r.user_id = u.id
-            JOIN branches b ON r.branch_id = b.id
-            WHERE r.id = ?;
-        `, [newReportId]);
-        
-        const createdReport = createdReportRows[0];
-        createdReport.details = JSON.parse(createdReport.details);
+        const [rows] = await db.query('SELECT * FROM reports WHERE id = ?', [insertId]);
+
+        const createdReport = {
+            id: rows[0].id.toString(),
+            employeeId: rows[0].employee_id,
+            employeeName: rows[0].employee_name,
+            branch: rows[0].branch,
+            department: rows[0].department,
+            type: rows[0].type,
+            date: rows[0].date,
+            status: rows[0].status,
+            details: JSON.parse(rows[0].details),
+            evaluation: rows[0].evaluation ? JSON.parse(rows[0].evaluation) : undefined,
+            modifications: rows[0].modifications ? JSON.parse(rows[0].modifications) : undefined,
+        };
 
         res.status(201).json(createdReport);
 
@@ -119,15 +97,58 @@ router.post('/reports', async (req, res) => {
     }
 });
 
-// DELETE /api/reports/:reportId - Deletes a report
-router.delete('/reports/:reportId', async (req, res) => {
-    const { reportId } = req.params;
+// PUT /api/reports/:id - تحديث تقرير موجود (للحقول النصية فقط)
+router.put('/reports/:id', async (req, res) => {
+    const { id } = req.params;
+    const reportUpdates = req.body;
+
+    // لا نسمح بتغيير المعرف أو هوية الموظف
+    delete reportUpdates.id;
+    delete reportUpdates.employeeId;
+    
+    const dbPayload = {
+        employee_name: reportUpdates.employeeName,
+        branch: reportUpdates.branch,
+        department: reportUpdates.department,
+        type: reportUpdates.type,
+        date: reportUpdates.date,
+        status: reportUpdates.status,
+        details: JSON.stringify(reportUpdates.details),
+        evaluation: reportUpdates.evaluation ? JSON.stringify(reportUpdates.evaluation) : null,
+        modifications: reportUpdates.modifications ? JSON.stringify(reportUpdates.modifications) : null,
+    };
+
+     // إزالة الحقول الفارغة لتجنب الكتابة فوقها بقيم null
+    Object.keys(dbPayload).forEach(key => dbPayload[key] === undefined && delete dbPayload[key]);
+    
     try {
-        await db.query('DELETE FROM reports WHERE id = ?', [reportId]);
-        res.status(200).json({ message: 'Report deleted successfully' });
-    } catch (error) {
-        console.error(`Error deleting report ${reportId}:`, error);
-        res.status(500).json({ message: 'Internal server error while deleting report.' });
+        const [result] = await db.query('UPDATE reports SET ? WHERE id = ?', [dbPayload, id]);
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ message: 'Report not found.' });
+        }
+
+        const [rows] = await db.query('SELECT * FROM reports WHERE id = ?', [id]);
+        
+        const updatedReport = {
+            id: rows[0].id.toString(),
+            employeeId: rows[0].employee_id,
+            employeeName: rows[0].employee_name,
+            branch: rows[0].branch,
+            department: rows[0].department,
+            type: rows[0].type,
+            date: rows[0].date,
+            status: rows[0].status,
+            details: JSON.parse(rows[0].details),
+            evaluation: rows[0].evaluation ? JSON.parse(rows[0].evaluation) : undefined,
+            modifications: rows[0].modifications ? JSON.parse(rows[0].modifications) : undefined,
+        };
+
+        res.json(updatedReport);
+
+    } catch(error) {
+        console.error('Error updating report:', error);
+        res.status(500).json({ message: 'An internal server error occurred while updating the report.' });
     }
 });
 
