@@ -8,10 +8,10 @@ router.get('/branches', async (req, res) => {
         const [rows] = await db.query('SELECT * FROM branches ORDER BY created_at DESC');
         const branches = rows.map(branch => ({
             id: branch.id.toString(),
-            name: branch.name,
-            location: branch.location,
-            phone: branch.phone,
-            manager: branch.manager_name,
+            name: branch.name || 'N/A',
+            location: branch.location || 'N/A',
+            phone: branch.phone || 'N/A',
+            manager: branch.manager_name || 'N/A',
             creationDate: branch.created_at,
         }));
         res.json(branches);
