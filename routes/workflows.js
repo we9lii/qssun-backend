@@ -8,9 +8,16 @@ const { supabase } = require('./supabaseClient.js');
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
+// Helper to sanitize filenames for Supabase
+const sanitizeFilename = (filename) => {
+    // Replace spaces with hyphens and remove any characters that are not alphanumeric, dots, or hyphens.
+    return filename.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9.-]/g, '');
+};
+
 // Helper to upload a file to Supabase
-const uploadFileToSupabase = async (file, userId) => {
-    const filePath = `public/workflows/${userId}/${Date.now()}-${file.originalname}`;
+const uploadFileToSupabase = async (file, employeeId) => {
+    const sanitizedName = sanitizeFilename(file.originalname);
+    const filePath = `public/workflows/${employeeId}/${Date.now()}-${sanitizedName}`;
     
     const { error } = await supabase.storage
         .from('report-attachments')
@@ -67,15 +74,23 @@ router.put('/workflow-requests/:id', upload.any(), async (req, res) => {
         if (!req.body.requestData) return res.status(400).json({ message: 'requestData is missing.' });
         
         const requestData = JSON.parse(req.body.requestData);
-        const userId = requestData.stageHistory.find(h => h.processor)?.processor || 'system';
+        const employeeId = requestData.employeeId; // Get secure employee ID from request data
+
+        if (!employeeId) {
+            return res.status(400).json({ message: 'Employee ID is missing from the request.' });
+        }
 
         if (req.files && req.files.length > 0) {
-            // Find the most recent history item to attach files to
             const lastHistoryItem = requestData.stageHistory[requestData.stageHistory.length - 1];
             
             for (const file of req.files) {
-                const [docId, docType, originalName] = file.originalname.split('___');
-                const uploadedFile = await uploadFileToSupabase({ ...file, originalname: originalName }, userId);
+                 const nameParts = file.originalname.split('___');
+                if (nameParts.length !== 3) {
+                    console.warn(`Skipping file with invalid name format: ${file.originalname}`);
+                    continue;
+                }
+                const [docId, docType, originalName] = nameParts;
+                const uploadedFile = await uploadFileToSupabase({ ...file, originalname: originalName }, employeeId);
                 
                 const document = {
                     id: docId,
@@ -85,6 +100,7 @@ router.put('/workflow-requests/:id', upload.any(), async (req, res) => {
                 };
                 
                 if (lastHistoryItem) {
+                    if (!lastHistoryItem.documents) lastHistoryItem.documents = [];
                     lastHistoryItem.documents.push(document);
                 }
             }
@@ -98,7 +114,6 @@ router.put('/workflow-requests/:id', upload.any(), async (req, res) => {
 
         await db.query('UPDATE workflow_requests SET ? WHERE id = ?', [dbPayload, id]);
         
-        // Fetch and return the complete updated request
         const [rows] = await db.query('SELECT * FROM workflow_requests WHERE id = ?', [id]);
         const row = rows[0];
         const updatedRequest = {
