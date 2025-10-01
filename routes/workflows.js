@@ -2,10 +2,10 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db.js');
 
-// GET /api/workflows-requests
-router.get('/workflows-requests', async (req, res) => {
+// GET /api/workflow-requests
+router.get('/workflow-requests', async (req, res) => {
     try {
-        const [rows] = await db.query('SELECT * FROM workflows_requests ORDER BY creation_date DESC');
+        const [rows] = await db.query('SELECT * FROM workflow_requests ORDER BY creation_date DESC');
         const requests = rows.map(req => ({
             id: req.id,
             title: req.title,
@@ -24,8 +24,8 @@ router.get('/workflows-requests', async (req, res) => {
         }));
         res.json(requests);
     } catch (error) {
-        console.error('Error fetching workflows requests:', error);
-        res.status(500).json({ message: 'An internal server error occurred while fetching workflows requests.' });
+        console.error('Error fetching workflow requests:', error);
+        res.status(500).json({ message: 'An internal server error occurred while fetching workflow requests.' });
     }
 });
 
