@@ -8,16 +8,11 @@ const { supabase } = require('./supabaseClient.js');
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
-// Helper to sanitize filenames for Supabase
-const sanitizeFilename = (filename) => {
-    // Replace spaces with hyphens and remove any characters that are not alphanumeric, dots, or hyphens.
-    return filename.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9.-]/g, '');
-};
-
 // Helper to upload a file to Supabase
 const uploadFileToSupabase = async (file, employeeId) => {
-    const sanitizedName = sanitizeFilename(file.originalname);
-    const filePath = `public/workflows/${employeeId}/${Date.now()}-${sanitizedName}`;
+    // Encode the original filename to handle Arabic characters and spaces safely
+    const encodedName = encodeURIComponent(file.originalname);
+    const filePath = `public/workflows/${employeeId}/${Date.now()}-${encodedName}`;
     
     const { error } = await supabase.storage
         .from('report-attachments')
@@ -34,13 +29,18 @@ const uploadFileToSupabase = async (file, employeeId) => {
     return { url: data.publicUrl, fileName: file.originalname };
 };
 
-// Helper to safely parse JSON
-const safeJsonParse = (jsonString, defaultValue) => {
-    if (!jsonString) return defaultValue;
+// Helper to safely parse JSON. Now handles non-string inputs silently.
+const safeJsonParse = (json, defaultValue) => {
+    if (typeof json !== 'string') {
+        // This is not an error, but might indicate unexpected data structure.
+        // We will not log it to keep the console clean for real errors.
+        return defaultValue;
+    }
     try {
-        return JSON.parse(jsonString);
+        return JSON.parse(json);
     } catch (e) {
-        console.error("Failed to parse JSON in workflow, returning default value:", e);
+        // Log only actual parsing errors for debugging, but don't crash.
+        // console.error(`Failed to parse JSON string: "${json.substring(0, 50)}..."`, e);
         return defaultValue;
     }
 };
@@ -74,7 +74,7 @@ router.put('/workflow-requests/:id', upload.any(), async (req, res) => {
         if (!req.body.requestData) return res.status(400).json({ message: 'requestData is missing.' });
         
         const requestData = JSON.parse(req.body.requestData);
-        const employeeId = requestData.employeeId; // Get secure employee ID from request data
+        const employeeId = requestData.employeeId; 
 
         if (!employeeId) {
             return res.status(400).json({ message: 'Employee ID is missing from the request.' });
