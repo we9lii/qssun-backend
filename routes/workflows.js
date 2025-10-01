@@ -10,7 +10,6 @@ const upload = multer({ storage: storage });
 
 // Helper to upload a file to Supabase
 const uploadFileToSupabase = async (file, employeeId) => {
-    // Encode the original filename to handle Arabic characters and spaces safely
     const encodedName = encodeURIComponent(file.originalname);
     const filePath = `public/workflows/${employeeId}/${Date.now()}-${encodedName}`;
     
@@ -71,14 +70,67 @@ router.get('/workflow-requests', async (req, res) => {
     }
 });
 
-// PUT /api/workflow-requests/:id
+// POST /api/workflow-requests - Create a new request
+router.post('/workflow-requests', async (req, res) => {
+    const { title, description, type, priority, employeeId, stageHistory } = req.body;
+    try {
+        const [userRows] = await db.query('SELECT id FROM users WHERE username = ?', [employeeId]);
+        if (userRows.length === 0) {
+            return res.status(404).json({ message: 'User not found.' });
+        }
+        const userId = userRows[0].id;
+
+        const newRequest = {
+            id: `REQ-${Date.now().toString().slice(-4)}`,
+            user_id: userId,
+            title,
+            description,
+            type,
+            priority,
+            current_stage_id: 1,
+            stage_history: JSON.stringify(stageHistory),
+        };
+
+        await db.query('INSERT INTO workflow_requests SET ?', newRequest);
+
+        // Fetch the newly created record to return to the frontend
+        const [rows] = await db.query(`
+            SELECT w.*, u.username as employee_id_username
+            FROM workflow_requests w
+            LEFT JOIN users u ON w.user_id = u.id
+            WHERE w.id = ?
+        `, [newRequest.id]);
+        
+        const row = rows[0];
+        const requestForFrontend = {
+            id: row.id,
+            title: row.title,
+            description: row.description,
+            type: row.type,
+            priority: row.priority,
+            currentStageId: row.current_stage_id,
+            creationDate: row.creation_date,
+            lastModified: row.last_modified,
+            stageHistory: safeJsonParse(row.stage_history, []),
+            employeeId: row.employee_id_username,
+        };
+
+        res.status(201).json(requestForFrontend);
+
+    } catch (error) {
+        console.error('Error creating workflow request:', error);
+        res.status(500).json({ message: 'An internal server error occurred.' });
+    }
+});
+
+
+// PUT /api/workflow-requests/:id - Update an existing request
 router.put('/workflow-requests/:id', upload.any(), async (req, res) => {
     const { id } = req.params;
     try {
         if (!req.body.requestData) return res.status(400).json({ message: 'requestData is missing.' });
         
         const requestData = JSON.parse(req.body.requestData);
-        // This employeeId now comes reliably from the frontend, which got it from the GET request
         const employeeId = requestData.employeeId; 
 
         if (!employeeId) {
@@ -117,7 +169,11 @@ router.put('/workflow-requests/:id', upload.any(), async (req, res) => {
             last_modified: new Date(),
         };
 
-        await db.query('UPDATE workflow_requests SET ? WHERE id = ?', [dbPayload, id]);
+        const [result] = await db.query('UPDATE workflow_requests SET ? WHERE id = ?', [dbPayload, id]);
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ message: 'Workflow request not found.'});
+        }
         
         // Fetch the updated record to return the most current state
         const [rows] = await db.query(`
