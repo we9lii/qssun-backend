@@ -37,19 +37,19 @@ router.post('/login', async (req, res) => {
         
         // 4. Construct the user object for the frontend
         // FIX: Ensure the role is capitalized ('Admin', 'Employee') to match frontend expectations.
-        const role = user.role.charAt(0).toUpperCase() + user.role.slice(1);
+        const role = user.role ? user.role.charAt(0).toUpperCase() + user.role.slice(1) : 'Employee';
 
         const userForFrontend = {
             id: user.id.toString(),
-            employeeId: user.username,
-            name: user.full_name,
-            email: user.email,
-            phone: user.phone,
+            employeeId: user.username || 'N/A',
+            name: user.full_name || 'N/A',
+            email: user.email || 'N/A',
+            phone: user.phone || 'N/A',
             role: role, 
             branch: branchName,
-            department: user.department || 'N/A', // Add default if not in DB
-            position: user.position || 'N/A', // Add default if not in DB
-            joinDate: user.created_at,
+            department: user.department || 'N/A',
+            position: user.position || 'N/A',
+            joinDate: user.created_at || new Date().toISOString(),
             employeeType: user.employee_type || 'Technician',
             hasImportExportPermission: !!user.has_import_export_permission,
             isFirstLogin: !!user.is_first_login,

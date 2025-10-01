@@ -49,17 +49,17 @@ router.get('/reports', async (req, res) => {
 
         const reports = rows.map(report => ({
             id: report.id.toString(),
-            employeeId: report.employee_id,
-            employeeName: report.employee_name,
-            branch: report.branch,
-            department: report.department,
-            type: report.type,
-            date: report.date,
-            status: report.status,
+            employeeId: report.employee_id || 'N/A',
+            employeeName: report.employee_name || 'N/A',
+            branch: report.branch || 'N/A',
+            department: report.department || 'N/A',
+            type: report.type || 'Inquiry',
+            date: report.date || new Date().toISOString(),
+            status: report.status || 'Pending',
             // Safely parse JSON fields
             details: safeJsonParse(report.details, {}),
             evaluation: safeJsonParse(report.evaluation, undefined),
-            modifications: safeJsonParse(report.modifications, undefined),
+            modifications: safeJsonParse(report.modifications, []),
         }));
 
         res.json(reports);
@@ -125,7 +125,7 @@ router.post('/reports', upload.any(), async (req, res) => {
             status: rows[0].status,
             details: safeJsonParse(rows[0].details, {}),
             evaluation: safeJsonParse(rows[0].evaluation, undefined),
-            modifications: safeJsonParse(rows[0].modifications, undefined),
+            modifications: safeJsonParse(rows[0].modifications, []),
         };
 
         res.status(201).json(createdReport);
@@ -180,7 +180,7 @@ router.put('/reports/:id', async (req, res) => {
             status: rows[0].status,
             details: safeJsonParse(rows[0].details, {}),
             evaluation: safeJsonParse(rows[0].evaluation, undefined),
-            modifications: safeJsonParse(rows[0].modifications, undefined),
+            modifications: safeJsonParse(rows[0].modifications, []),
         };
 
         res.json(updatedReport);

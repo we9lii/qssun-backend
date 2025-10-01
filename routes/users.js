@@ -9,16 +9,16 @@ router.get('/users', async (req, res) => {
 
         const users = userRows.map(user => ({
             id: user.id.toString(),
-            employeeId: user.username,
-            name: user.full_name,
-            email: user.email,
-            phone: user.phone,
-            role: user.role,
+            employeeId: user.username || 'N/A',
+            name: user.full_name || 'N/A',
+            email: user.email || 'N/A',
+            phone: user.phone || 'N/A',
+            role: user.role ? user.role.charAt(0).toUpperCase() + user.role.slice(1) : 'Employee',
             branch: user.branch_name || 'N/A',
             department: user.department || 'N/A',
             position: user.position || 'N/A',
-            joinDate: user.created_at,
-            employeeType: user.employee_type,
+            joinDate: user.created_at || new Date().toISOString(),
+            employeeType: user.employee_type || 'Technician',
             hasImportExportPermission: !!user.has_import_export_permission,
             isFirstLogin: !!user.is_first_login,
         }));
@@ -52,7 +52,7 @@ router.post('/users', async (req, res) => {
             email: email,
             full_name: name,
             phone: phone,
-            role: role,
+            role: role.toLowerCase(), // Store role in lowercase
             branch_id: branchId,
             department: department,
             position: position,
@@ -67,20 +67,21 @@ router.post('/users', async (req, res) => {
 
         const [userRows] = await db.query('SELECT u.*, b.name as branch_name FROM users u LEFT JOIN branches b ON u.branch_id = b.id WHERE u.id = ?', [insertId]);
         
+        const user = userRows[0];
         const userForFrontend = {
-            id: userRows[0].id.toString(),
-            employeeId: userRows[0].username,
-            name: userRows[0].full_name,
-            email: userRows[0].email,
-            phone: userRows[0].phone,
-            role: userRows[0].role,
-            branch: userRows[0].branch_name || 'N/A',
-            department: userRows[0].department || 'N/A',
-            position: userRows[0].position || 'N/A',
-            joinDate: userRows[0].created_at,
-            employeeType: userRows[0].employee_type,
-            hasImportExportPermission: !!userRows[0].has_import_export_permission,
-            isFirstLogin: !!userRows[0].is_first_login,
+            id: user.id.toString(),
+            employeeId: user.username,
+            name: user.full_name,
+            email: user.email,
+            phone: user.phone,
+            role: user.role ? user.role.charAt(0).toUpperCase() + user.role.slice(1) : 'Employee',
+            branch: user.branch_name || 'N/A',
+            department: user.department || 'N/A',
+            position: user.position || 'N/A',
+            joinDate: user.created_at,
+            employeeType: user.employee_type,
+            hasImportExportPermission: !!user.has_import_export_permission,
+            isFirstLogin: !!user.is_first_login,
         };
 
         res.status(201).json(userForFrontend);
@@ -112,7 +113,7 @@ router.put('/users/:id', async (req, res) => {
             email: email,
             full_name: name,
             phone: phone,
-            role: role,
+            role: role.toLowerCase(),
             branch_id: branchId,
             department: department,
             position: position,
@@ -127,20 +128,21 @@ router.put('/users/:id', async (req, res) => {
         }
         
         const [userRows] = await db.query('SELECT u.*, b.name as branch_name FROM users u LEFT JOIN branches b ON u.branch_id = b.id WHERE u.id = ?', [id]);
+        const user = userRows[0];
         const userForFrontend = {
-            id: userRows[0].id.toString(),
-            employeeId: userRows[0].username,
-            name: userRows[0].full_name,
-            email: userRows[0].email,
-            phone: userRows[0].phone,
-            role: userRows[0].role,
-            branch: userRows[0].branch_name || 'N/A',
-            department: userRows[0].department || 'N/A',
-            position: userRows[0].position || 'N/A',
-            joinDate: userRows[0].created_at,
-            employeeType: userRows[0].employee_type,
-            hasImportExportPermission: !!userRows[0].has_import_export_permission,
-            isFirstLogin: !!userRows[0].is_first_login,
+            id: user.id.toString(),
+            employeeId: user.username,
+            name: user.full_name,
+            email: user.email,
+            phone: user.phone,
+            role: user.role ? user.role.charAt(0).toUpperCase() + user.role.slice(1) : 'Employee',
+            branch: user.branch_name || 'N/A',
+            department: user.department || 'N/A',
+            position: user.position || 'N/A',
+            joinDate: user.created_at,
+            employeeType: user.employee_type,
+            hasImportExportPermission: !!user.has_import_export_permission,
+            isFirstLogin: !!user.is_first_login,
         };
 
         res.json(userForFrontend);

@@ -12,7 +12,7 @@ router.get('/branches', async (req, res) => {
             location: branch.location || 'N/A',
             phone: branch.phone || 'N/A',
             manager: branch.manager_name || 'N/A',
-            creationDate: branch.created_at,
+            creationDate: branch.created_at || new Date().toISOString(),
         }));
         res.json(branches);
     } catch (error) {
