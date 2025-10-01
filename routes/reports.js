@@ -2,7 +2,7 @@ const express = require('express');
 const multer = require('multer');
 const router = express.Router();
 const db = require('../db.js');
-const { supabase } = require('./supabaseClient.js'); // FIX: Path updated to be in the same directory
+const { supabase } = require('./supabaseClient.js');
 
 // تهيئة Multer لتخزين الملفات في الذاكرة بدلاً من القرص
 const storage = multer.memoryStorage();
