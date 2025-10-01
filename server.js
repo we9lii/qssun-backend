@@ -5,24 +5,32 @@ const allRoutes = require('./routes'); // Central route handler
 
 const app = express();
 
-// CORS Configuration
+// --- CORS Configuration ---
+// تأكد من إزالة المسافات الزائدة في الـ origin
+const allowedOrigin = process.env.FRONTEND_URL || 'https://qrs.qssun.solar';
+
 const corsOptions = {
-  origin: 'https://qrs.qssun.solar', // Allow only your frontend to access
-  optionsSuccessStatus: 200 // For legacy browser support
+  origin: allowedOrigin.trim(), // تنظيف أي مسافات زائدة
+  optionsSuccessStatus: 200, // دعم المتصفحات القديمة
 };
 
-// Middleware
+// --- Middleware ---
 app.use(cors(corsOptions));
-app.use(express.json());
+app.use(express.json()); // لتحليل JSON من الطلبات
 
-// Use the central router
+// --- Routes ---
 app.use('/api', allRoutes);
 
+// --- Root Route ---
 app.get('/', (req, res) => {
-    res.send('Qssun Reports API is running!');
+  res.status(200).send('✅ Qssun Reports API is running successfully!');
 });
 
-const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
+// --- Port Binding (مهم جدًا لـ Render) ---
+const PORT = process.env.PORT || 10000;
+
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 Server is now live on http://0.0.0.0:${PORT}`);
+  console.log(`🌐 Frontend allowed: ${corsOptions.origin}`);
+  console.log(`📦 Environment: ${process.env.NODE_ENV || 'development'}`);
 });
