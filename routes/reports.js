@@ -8,16 +8,11 @@ const { supabase } = require('./supabaseClient.js');
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
-// Helper to sanitize filenames for Supabase
-const sanitizeFilename = (filename) => {
-    // Replace spaces with hyphens and remove any characters that are not alphanumeric, dots, or hyphens.
-    return filename.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9.-]/g, '');
-};
-
 // Helper to upload a file to Supabase
 const uploadFileToSupabase = async (file, employeeId, folder = 'attachments') => {
-    const sanitizedName = sanitizeFilename(file.originalname);
-    const filePath = `public/${folder}/${employeeId}/${Date.now()}-${sanitizedName}`;
+    // Encode the original filename to handle Arabic characters and spaces safely
+    const encodedName = encodeURIComponent(file.originalname);
+    const filePath = `public/${folder}/${employeeId}/${Date.now()}-${encodedName}`;
     
     const { error } = await supabase.storage
         .from('report-attachments')
