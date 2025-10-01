@@ -7,9 +7,10 @@ const pool = mysql.createPool({
   database: process.env.DB_NAME,
   waitForConnections: true,
   connectionLimit: 10,
-  queueLimit: 0
+  queueLimit: 0,
+  dateStrings: true // This will return date/timestamp columns as strings, preventing crashes from invalid dates.
 });
 
-console.log('Database connection pool created.');
+console.log('Database connection pool created with dateStrings enabled.');
 
 module.exports = pool;
