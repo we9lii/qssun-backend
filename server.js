@@ -5,8 +5,14 @@ const allRoutes = require('./routes'); // Central route handler
 
 const app = express();
 
+// CORS Configuration
+const corsOptions = {
+  origin: 'https://qrs.qssun.solar', // Allow only your frontend to access
+  optionsSuccessStatus: 200 // For legacy browser support
+};
+
 // Middleware
-app.use(cors());
+app.use(cors(corsOptions));
 app.use(express.json());
 
 // Use the central router
