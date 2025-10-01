@@ -2,6 +2,17 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db.js');
 
+// Helper to safely parse JSON
+const safeJsonParse = (jsonString, defaultValue) => {
+    if (!jsonString) return defaultValue;
+    try {
+        return JSON.parse(jsonString);
+    } catch (e) {
+        console.error("Failed to parse JSON in workflow, returning default value:", e);
+        return defaultValue;
+    }
+};
+
 // GET /api/workflow-requests
 router.get('/workflow-requests', async (req, res) => {
     try {
@@ -15,11 +26,11 @@ router.get('/workflow-requests', async (req, res) => {
             currentStageId: req.current_stage_id,
             creationDate: req.creation_date,
             lastModified: req.last_modified,
-            stageHistory: req.stage_history ? JSON.parse(req.stage_history) : [],
+            stageHistory: safeJsonParse(req.stage_history, []),
             trackingNumber: req.tracking_number,
             estimatedCost: req.estimated_cost,
             actualCost: req.actual_cost,
-            supplierInfo: req.supplier_info ? JSON.parse(req.supplier_info) : undefined,
+            supplierInfo: safeJsonParse(req.supplier_info, undefined),
             expectedDeliveryDate: req.expected_delivery_date,
         }));
         res.json(requests);

@@ -30,6 +30,18 @@ const uploadFileToSupabase = async (file, employeeId) => {
     return data.publicUrl;
 };
 
+// Helper to safely parse JSON
+const safeJsonParse = (jsonString, defaultValue) => {
+    if (!jsonString) return defaultValue;
+    try {
+        return JSON.parse(jsonString);
+    } catch (e) {
+        console.error("Failed to parse JSON, returning default value:", e);
+        return defaultValue;
+    }
+};
+
+
 // GET /api/reports - جلب كل التقارير
 router.get('/reports', async (req, res) => {
     try {
@@ -45,9 +57,9 @@ router.get('/reports', async (req, res) => {
             date: report.date,
             status: report.status,
             // Safely parse JSON fields
-            details: report.details ? JSON.parse(report.details) : {},
-            evaluation: report.evaluation ? JSON.parse(report.evaluation) : undefined,
-            modifications: report.modifications ? JSON.parse(report.modifications) : undefined,
+            details: safeJsonParse(report.details, {}),
+            evaluation: safeJsonParse(report.evaluation, undefined),
+            modifications: safeJsonParse(report.modifications, undefined),
         }));
 
         res.json(reports);
@@ -111,9 +123,9 @@ router.post('/reports', upload.any(), async (req, res) => {
             type: rows[0].type,
             date: rows[0].date,
             status: rows[0].status,
-            details: JSON.parse(rows[0].details),
-            evaluation: rows[0].evaluation ? JSON.parse(rows[0].evaluation) : undefined,
-            modifications: rows[0].modifications ? JSON.parse(rows[0].modifications) : undefined,
+            details: safeJsonParse(rows[0].details, {}),
+            evaluation: safeJsonParse(rows[0].evaluation, undefined),
+            modifications: safeJsonParse(rows[0].modifications, undefined),
         };
 
         res.status(201).json(createdReport);
@@ -166,9 +178,9 @@ router.put('/reports/:id', async (req, res) => {
             type: rows[0].type,
             date: rows[0].date,
             status: rows[0].status,
-            details: JSON.parse(rows[0].details),
-            evaluation: rows[0].evaluation ? JSON.parse(rows[0].evaluation) : undefined,
-            modifications: rows[0].modifications ? JSON.parse(rows[0].modifications) : undefined,
+            details: safeJsonParse(rows[0].details, {}),
+            evaluation: safeJsonParse(rows[0].evaluation, undefined),
+            modifications: safeJsonParse(rows[0].modifications, undefined),
         };
 
         res.json(updatedReport);

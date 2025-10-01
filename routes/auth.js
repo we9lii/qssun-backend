@@ -36,13 +36,16 @@ router.post('/login', async (req, res) => {
         }
         
         // 4. Construct the user object for the frontend
+        // FIX: Ensure the role is capitalized ('Admin', 'Employee') to match frontend expectations.
+        const role = user.role.charAt(0).toUpperCase() + user.role.slice(1);
+
         const userForFrontend = {
             id: user.id.toString(),
             employeeId: user.username,
             name: user.full_name,
             email: user.email,
             phone: user.phone,
-            role: user.role, // Assuming role is stored as 'Admin' or 'Employee'
+            role: role, 
             branch: branchName,
             department: user.department || 'N/A', // Add default if not in DB
             position: user.position || 'N/A', // Add default if not in DB
