@@ -15,8 +15,8 @@ const uploadFileToCloudinary = (file, employeeId) => {
         const uploadStream = cloudinary.uploader.upload_stream(
             {
                 folder: `qssun_reports/workflows/${employeeId}`,
-                use_filename: true,
-                unique_filename: true,
+                use_filename: true, // Keep the original filename
+                unique_filename: true, // Add unique characters to prevent overwrites
                 resource_type: 'auto'
             },
             (error, result) => {
@@ -24,6 +24,7 @@ const uploadFileToCloudinary = (file, employeeId) => {
                     return reject(error);
                 }
                 if (result) {
+                    // Return the secure URL and original filename
                     resolve({ url: result.secure_url, fileName: file.originalname });
                 } else {
                     reject(new Error("Cloudinary upload failed without an error object."));
@@ -44,7 +45,7 @@ const safeJsonParse = (json, defaultValue) => {
     }
 };
 
-// GET /api/workflow-requests
+// GET /api/workflow-requests - Fetch all requests
 router.get('/workflow-requests', async (req, res) => {
     try {
         const query = `
@@ -127,28 +128,40 @@ router.put('/workflow-requests/:id', upload.any(), async (req, res) => {
 
         if (!employeeId) return res.status(400).json({ message: 'Employee ID is missing.' });
 
+        // Logic to handle file uploads and update stage history
         if (req.files && req.files.length > 0) {
-            const lastHistoryItem = requestData.stageHistory[requestData.stageHistory.length - 1];
-            
-            for (const file of req.files) {
-                 const nameParts = file.originalname.split('___');
-                if (nameParts.length !== 3) {
-                    console.warn(`Skipping file with invalid name format: ${file.originalname}`);
-                    continue;
-                }
-                const [docId, docType, originalName] = nameParts;
-                const uploadedFile = await uploadFileToCloudinary({ ...file, originalname: originalName }, employeeId);
-                
-                const document = {
-                    id: docId,
-                    type: docType,
-                    uploadDate: new Date().toISOString(),
-                    ...uploadedFile
-                };
-                
-                if (lastHistoryItem) {
-                    if (!lastHistoryItem.documents) lastHistoryItem.documents = [];
-                    lastHistoryItem.documents.push(document);
+            const stageHistory = requestData.stageHistory;
+
+            for (const item of stageHistory) {
+                if (Array.isArray(item.documents)) {
+                    for (let i = 0; i < item.documents.length; i++) {
+                        const doc = item.documents[i];
+                        // Check if the URL is a temporary blob URL from the frontend
+                        if (doc.url && doc.url.startsWith('blob:')) {
+                            // Find the corresponding file uploaded from the frontend
+                            const fileToUpload = req.files.find(f => {
+                                const [fileDocId] = f.originalname.split('___');
+                                return fileDocId === doc.id;
+                            });
+
+                            if (fileToUpload) {
+                                // Reconstruct original filename before upload
+                                const [,, ...originalNameParts] = fileToUpload.originalname.split('___');
+                                const originalName = originalNameParts.join('___');
+                                
+                                // Upload the file to Cloudinary
+                                const uploadedFile = await uploadFileToCloudinary({ ...fileToUpload, originalname: originalName }, employeeId);
+                                
+                                // Replace blob URL with permanent Cloudinary URL
+                                item.documents[i] = {
+                                    ...doc,
+                                    url: uploadedFile.url,
+                                    fileName: uploadedFile.fileName,
+                                    file: undefined // Remove the temporary file object
+                                };
+                            }
+                        }
+                    }
                 }
             }
         }
