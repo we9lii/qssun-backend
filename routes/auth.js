@@ -52,7 +52,6 @@ router.post('/login', async (req, res) => {
             joinDate: user.created_at || new Date().toISOString(),
             employeeType: user.employee_type || 'Technician',
             hasImportExportPermission: !!user.has_import_export_permission,
-            isFirstLogin: !!user.is_first_login,
         };
 
         res.json(userForFrontend);

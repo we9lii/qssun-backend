@@ -186,4 +186,20 @@ router.put('/workflow-requests/:id', upload.any(), async (req, res) => {
     }
 });
 
+// DELETE /api/workflow-requests/:id - Delete a request
+router.delete('/workflow-requests/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const [result] = await db.query('DELETE FROM workflow_requests WHERE id = ?', [id]);
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ message: 'Workflow request not found.' });
+        }
+        res.status(200).json({ message: 'Workflow request deleted successfully.' });
+    } catch (error) {
+        console.error('Error deleting workflow request:', error);
+        res.status(500).json({ message: 'An internal server error occurred.' });
+    }
+});
+
+
 module.exports = router;
