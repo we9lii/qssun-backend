@@ -9,39 +9,22 @@ const streamifier = require('streamifier');
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
-const getResourceType = (mimetype) => {
-    if (mimetype.startsWith('image/')) return 'image';
-    if (mimetype.startsWith('video/')) return 'video';
-    return 'raw';
-};
-
 // Helper to upload a file to Cloudinary
 const uploadFileToCloudinary = (file, employeeId, folder) => {
     return new Promise((resolve, reject) => {
-        const resourceType = getResourceType(file.mimetype);
-        
-        const uploadOptions = {
-            folder: `qssun_reports/${folder}/${employeeId}`,
-            use_filename: true,
-            unique_filename: false,
-            overwrite: true, 
-            resource_type: resourceType
-        };
-
         const uploadStream = cloudinary.uploader.upload_stream(
-            uploadOptions,
+            {
+                folder: `qssun_reports/${folder}/${employeeId}`,
+                use_filename: true,
+                unique_filename: true,
+                resource_type: 'auto'
+            },
             (error, result) => {
                 if (error) {
                     return reject(error);
                 }
                 if (result) {
-                    let finalUrl = result.secure_url;
-                    // If it's a raw file, inject 'fl_inline' for browser viewing.
-                    if (result.resource_type === 'raw' && finalUrl.includes('/upload/')) {
-                        const parts = finalUrl.split('/upload/');
-                        finalUrl = `${parts[0]}/upload/fl_inline/${parts[1]}`;
-                    }
-                    resolve({ url: finalUrl, fileName: file.originalname });
+                    resolve({ url: result.secure_url, fileName: file.originalname });
                 } else {
                     reject(new Error("Cloudinary upload failed without an error object."));
                 }
