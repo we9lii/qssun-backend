@@ -20,6 +20,7 @@ router.get('/users', async (req, res) => {
             joinDate: user.created_at || new Date().toISOString(),
             employeeType: user.employee_type || 'Technician',
             hasImportExportPermission: !!user.has_import_export_permission,
+            isFirstLogin: !!user.is_first_login,
         }));
 
         res.json(users);
@@ -57,6 +58,7 @@ router.post('/users', async (req, res) => {
             position: position,
             employee_type: employeeType,
             has_import_export_permission: hasImportExportPermission ? 1 : 0,
+            is_first_login: 1, // New users should complete their profile
             is_active: 1,
         };
 
@@ -79,6 +81,7 @@ router.post('/users', async (req, res) => {
             joinDate: user.created_at,
             employeeType: user.employee_type,
             hasImportExportPermission: !!user.has_import_export_permission,
+            isFirstLogin: !!user.is_first_login,
         };
 
         res.status(201).json(userForFrontend);
@@ -139,6 +142,7 @@ router.put('/users/:id', async (req, res) => {
             joinDate: user.created_at,
             employeeType: user.employee_type,
             hasImportExportPermission: !!user.has_import_export_permission,
+            isFirstLogin: !!user.is_first_login,
         };
 
         res.json(userForFrontend);
@@ -163,5 +167,73 @@ router.delete('/users/:id', async (req, res) => {
         res.status(500).json({ message: 'An internal server error occurred.' });
     }
 });
+
+
+// PUT /api/users/profile - Update user profile on first login
+router.put('/users/profile', async (req, res) => {
+    const { userId, name, phone, password } = req.body;
+
+    if (!userId || !name || !phone || !password) {
+        return res.status(400).json({ message: 'All fields are required.' });
+    }
+
+    try {
+        // In a real app, you MUST hash the password here using bcrypt
+        // const hashedPassword = await bcrypt.hash(password, 10);
+        
+        const [result] = await db.query(
+            'UPDATE users SET full_name = ?, phone = ?, password = ?, is_first_login = 0 WHERE id = ?',
+            [name, phone, password, userId]
+        );
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ message: 'User not found.' });
+        }
+
+        res.json({ message: 'Profile updated successfully.' });
+
+    } catch (error) {
+        console.error('Error updating profile:', error);
+        res.status(500).json({ message: 'An internal server error occurred.' });
+    }
+});
+
+// PUT /api/users/change-password - Change a user's password
+router.put('/users/change-password', async (req, res) => {
+    const { userId, currentPassword, newPassword } = req.body;
+    
+    if (!userId || !currentPassword || !newPassword) {
+        return res.status(400).json({ message: 'All password fields are required.' });
+    }
+
+    try {
+        // 1. Find the user
+        const [userRows] = await db.query('SELECT * FROM users WHERE id = ?', [userId]);
+        if (userRows.length === 0) {
+            return res.status(404).json({ message: 'المستخدم غير موجود.' });
+        }
+        const user = userRows[0];
+
+        // 2. Check current password (plain text, as per existing system)
+        if (user.password !== currentPassword) {
+            return res.status(400).json({ message: 'كلمة المرور الحالية غير صحيحة.' });
+        }
+
+        // 3. Update to the new password (plain text)
+        // SECURITY WARNING: Should be hashed.
+        const [result] = await db.query('UPDATE users SET password = ? WHERE id = ?', [newPassword, userId]);
+        
+        if (result.affectedRows === 0) {
+             return res.status(500).json({ message: 'فشل تحديث كلمة المرور.' });
+        }
+        
+        res.status(200).json({ message: 'تم تغيير كلمة المرور بنجاح.' });
+
+    } catch (error) {
+        console.error('Error changing password:', error);
+        res.status(500).json({ message: 'حدث خطأ في الخادم.' });
+    }
+});
+
 
 module.exports = router;
