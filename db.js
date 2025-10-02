@@ -8,9 +8,10 @@ const pool = mysql.createPool({
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
-  dateStrings: true // This will return date/timestamp columns as strings, preventing crashes from invalid dates.
+  dateStrings: true, // This will return date/timestamp columns as strings, preventing crashes from invalid dates.
+  charset: 'utf8mb4' // Ensures proper handling of Arabic and other special characters.
 });
 
-console.log('Database connection pool created with dateStrings enabled.');
+console.log('Database connection pool created with dateStrings enabled and utf8mb4 charset.');
 
 module.exports = pool;
