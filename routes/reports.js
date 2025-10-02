@@ -10,22 +10,24 @@ const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
 const getResourceType = (mimetype) => {
-    // Treat PDFs like images to get a direct viewable link from Cloudinary
-    if (mimetype.startsWith('image/') || mimetype === 'application/pdf') return 'image';
+    if (mimetype.startsWith('image/')) return 'image';
     if (mimetype.startsWith('video/')) return 'video';
+    // Correctly classify PDFs and other documents as 'raw'
     return 'raw';
 };
 
 // Helper to upload a file to Cloudinary
 const uploadFileToCloudinary = (file, employeeId, folder) => {
     return new Promise((resolve, reject) => {
-        const publicId = file.originalname.split('.').slice(0, -1).join('.');
         const resourceType = getResourceType(file.mimetype);
 
         const uploadStream = cloudinary.uploader.upload_stream(
             {
                 folder: `qssun_reports/${folder}/${employeeId}`,
-                public_id: publicId,
+                // These options are crucial: they preserve the original filename and extension in the URL.
+                use_filename: true,
+                unique_filename: false,
+                overwrite: true, // Allow overwriting files with the same name
                 resource_type: resourceType
             },
             (error, result) => {
@@ -33,6 +35,7 @@ const uploadFileToCloudinary = (file, employeeId, folder) => {
                     return reject(error);
                 }
                 if (result) {
+                    // The result.secure_url will now end with ".pdf", allowing direct viewing.
                     resolve({ url: result.secure_url, fileName: file.originalname });
                 } else {
                     reject(new Error("Cloudinary upload failed without an error object."));
