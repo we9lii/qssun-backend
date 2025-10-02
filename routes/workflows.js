@@ -2,37 +2,41 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db.js');
 const multer = require('multer');
-const { supabase } = require('./supabaseClient.js');
+const { cloudinary } = require('../cloudinary.js');
+const streamifier = require('streamifier');
 
 // Setup multer for memory storage
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
-// Helper to upload a file to Supabase
-const uploadFileToSupabase = async (file, employeeId) => {
-    const encodedName = encodeURIComponent(file.originalname);
-    const filePath = `public/workflows/${employeeId}/${Date.now()}-${encodedName}`;
-    
-    const { error } = await supabase.storage
-        .from('report-attachments')
-        .upload(filePath, file.buffer, {
-            contentType: file.mimetype,
-        });
-
-    if (error) throw error;
-
-    const { data } = supabase.storage
-        .from('report-attachments')
-        .getPublicUrl(filePath);
-
-    return { url: data.publicUrl, fileName: file.originalname };
+// Helper to upload a file to Cloudinary
+const uploadFileToCloudinary = (file, employeeId) => {
+    return new Promise((resolve, reject) => {
+        const publicId = file.originalname.split('.').slice(0, -1).join('.');
+        const uploadStream = cloudinary.uploader.upload_stream(
+            {
+                folder: `qssun_reports/workflows/${employeeId}`,
+                public_id: publicId,
+                resource_type: 'auto'
+            },
+            (error, result) => {
+                if (error) {
+                    return reject(error);
+                }
+                if (result) {
+                    resolve({ url: result.secure_url, fileName: file.originalname });
+                } else {
+                    reject(new Error("Cloudinary upload failed without an error object."));
+                }
+            }
+        );
+        streamifier.createReadStream(file.buffer).pipe(uploadStream);
+    });
 };
 
-// Helper to safely parse JSON. Now handles non-string inputs silently.
+// Helper to safely parse JSON.
 const safeJsonParse = (json, defaultValue) => {
-    if (typeof json !== 'string') {
-        return defaultValue;
-    }
+    if (typeof json !== 'string') return defaultValue;
     try {
         return JSON.parse(json);
     } catch (e) {
@@ -61,7 +65,7 @@ router.get('/workflow-requests', async (req, res) => {
             creationDate: req.creation_date || new Date().toISOString(),
             lastModified: req.last_modified || new Date().toISOString(),
             stageHistory: safeJsonParse(req.stage_history, []),
-            employeeId: req.employee_id_username, // Add the creator's employeeId
+            employeeId: req.employee_id_username,
         }));
         res.json(requests);
     } catch (error) {
@@ -75,31 +79,21 @@ router.post('/workflow-requests', async (req, res) => {
     const { title, description, type, priority, employeeId, stageHistory } = req.body;
     try {
         const [userRows] = await db.query('SELECT id FROM users WHERE username = ?', [employeeId]);
-        if (userRows.length === 0) {
-            return res.status(404).json({ message: 'User not found.' });
-        }
+        if (userRows.length === 0) return res.status(404).json({ message: 'User not found.' });
+        
         const userId = userRows[0].id;
 
         const newRequest = {
             id: `REQ-${Date.now().toString().slice(-4)}`,
             user_id: userId,
-            title,
-            description,
-            type,
-            priority,
+            title, description, type, priority,
             current_stage_id: 1,
             stage_history: JSON.stringify(stageHistory),
         };
 
         await db.query('INSERT INTO workflow_requests SET ?', newRequest);
-
-        // Fetch the newly created record to return to the frontend
-        const [rows] = await db.query(`
-            SELECT w.*, u.username as employee_id_username
-            FROM workflow_requests w
-            LEFT JOIN users u ON w.user_id = u.id
-            WHERE w.id = ?
-        `, [newRequest.id]);
+        
+        const [rows] = await db.query(`SELECT w.*, u.username as employee_id_username FROM workflow_requests w LEFT JOIN users u ON w.user_id = u.id WHERE w.id = ?`, [newRequest.id]);
         
         const row = rows[0];
         const requestForFrontend = {
@@ -114,7 +108,6 @@ router.post('/workflow-requests', async (req, res) => {
             stageHistory: safeJsonParse(row.stage_history, []),
             employeeId: row.employee_id_username,
         };
-
         res.status(201).json(requestForFrontend);
 
     } catch (error) {
@@ -122,7 +115,6 @@ router.post('/workflow-requests', async (req, res) => {
         res.status(500).json({ message: 'An internal server error occurred.' });
     }
 });
-
 
 // PUT /api/workflow-requests/:id - Update an existing request
 router.put('/workflow-requests/:id', upload.any(), async (req, res) => {
@@ -133,9 +125,7 @@ router.put('/workflow-requests/:id', upload.any(), async (req, res) => {
         const requestData = JSON.parse(req.body.requestData);
         const employeeId = requestData.employeeId; 
 
-        if (!employeeId) {
-            return res.status(400).json({ message: 'Employee ID is missing from the request.' });
-        }
+        if (!employeeId) return res.status(400).json({ message: 'Employee ID is missing.' });
 
         if (req.files && req.files.length > 0) {
             const lastHistoryItem = requestData.stageHistory[requestData.stageHistory.length - 1];
@@ -147,7 +137,7 @@ router.put('/workflow-requests/:id', upload.any(), async (req, res) => {
                     continue;
                 }
                 const [docId, docType, originalName] = nameParts;
-                const uploadedFile = await uploadFileToSupabase({ ...file, originalname: originalName }, employeeId);
+                const uploadedFile = await uploadFileToCloudinary({ ...file, originalname: originalName }, employeeId);
                 
                 const document = {
                     id: docId,
@@ -171,17 +161,9 @@ router.put('/workflow-requests/:id', upload.any(), async (req, res) => {
 
         const [result] = await db.query('UPDATE workflow_requests SET ? WHERE id = ?', [dbPayload, id]);
 
-        if (result.affectedRows === 0) {
-            return res.status(404).json({ message: 'Workflow request not found.'});
-        }
+        if (result.affectedRows === 0) return res.status(404).json({ message: 'Workflow request not found.'});
         
-        // Fetch the updated record to return the most current state
-        const [rows] = await db.query(`
-            SELECT w.*, u.username as employee_id_username
-            FROM workflow_requests w
-            LEFT JOIN users u ON w.user_id = u.id
-            WHERE w.id = ?
-        `, [id]);
+        const [rows] = await db.query(`SELECT w.*, u.username as employee_id_username FROM workflow_requests w LEFT JOIN users u ON w.user_id = u.id WHERE w.id = ?`, [id]);
         
         const row = rows[0];
         const updatedRequest = {
@@ -196,7 +178,6 @@ router.put('/workflow-requests/:id', upload.any(), async (req, res) => {
             stageHistory: safeJsonParse(row.stage_history, []),
             employeeId: row.employee_id_username,
         };
-
         res.json(updatedRequest);
 
     } catch (error) {
@@ -204,6 +185,5 @@ router.put('/workflow-requests/:id', upload.any(), async (req, res) => {
         res.status(500).json({ message: 'An internal server error occurred.' });
     }
 });
-
 
 module.exports = router;

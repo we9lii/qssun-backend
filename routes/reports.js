@@ -2,33 +2,38 @@ const express = require('express');
 const multer = require('multer');
 const router = express.Router();
 const db = require('../db.js');
-const { supabase } = require('./supabaseClient.js');
+const { cloudinary } = require('../cloudinary.js');
+const streamifier = require('streamifier');
 
 // Setup multer for memory storage
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
-// Helper to upload a file to Supabase
-const uploadFileToSupabase = async (file, employeeId, folder = 'attachments') => {
-    // Encode the original filename to handle Arabic characters and spaces safely
-    const encodedName = encodeURIComponent(file.originalname);
-    const filePath = `public/${folder}/${employeeId}/${Date.now()}-${encodedName}`;
-    
-    const { error } = await supabase.storage
-        .from('report-attachments')
-        .upload(filePath, file.buffer, {
-            contentType: file.mimetype,
-            upsert: false,
-        });
-
-    if (error) throw error;
-
-    const { data } = supabase.storage
-        .from('report-attachments')
-        .getPublicUrl(filePath);
-
-    return { url: data.publicUrl, fileName: file.originalname };
+// Helper to upload a file to Cloudinary
+const uploadFileToCloudinary = (file, employeeId, folder) => {
+    return new Promise((resolve, reject) => {
+        const publicId = file.originalname.split('.').slice(0, -1).join('.');
+        const uploadStream = cloudinary.uploader.upload_stream(
+            {
+                folder: `qssun_reports/${folder}/${employeeId}`,
+                public_id: publicId,
+                resource_type: 'auto'
+            },
+            (error, result) => {
+                if (error) {
+                    return reject(error);
+                }
+                if (result) {
+                    resolve({ url: result.secure_url, fileName: file.originalname });
+                } else {
+                    reject(new Error("Cloudinary upload failed without an error object."));
+                }
+            }
+        );
+        streamifier.createReadStream(file.buffer).pipe(uploadStream);
+    });
 };
+
 
 // Helper to safely parse JSON
 const safeJsonParse = (jsonString, defaultValue = {}) => {
@@ -82,26 +87,25 @@ router.post('/reports', upload.any(), async (req, res) => {
         
         const reportData = JSON.parse(req.body.reportData);
         let details = reportData.details || {};
-        const employeeId = reportData.employeeId; // Use the secure employeeId
+        const employeeId = reportData.employeeId;
 
-        // Handle attachments based on report type
         if (reportData.type === 'Maintenance') {
             const beforeImages = req.files.filter(f => f.fieldname === 'maintenance_beforeImages');
             const afterImages = req.files.filter(f => f.fieldname === 'maintenance_afterImages');
-            details.beforeImages = await Promise.all(beforeImages.map(file => uploadFileToSupabase(file, employeeId, 'maintenance')));
-            details.afterImages = await Promise.all(afterImages.map(file => uploadFileToSupabase(file, employeeId, 'maintenance')));
+            details.beforeImages = await Promise.all(beforeImages.map(file => uploadFileToCloudinary(file, employeeId, 'maintenance')));
+            details.afterImages = await Promise.all(afterImages.map(file => uploadFileToCloudinary(file, employeeId, 'maintenance')));
         } else if (reportData.type === 'Sales') {
             details.customers = details.customers || [];
             for (let i = 0; i < details.customers.length; i++) {
                 const customerFiles = req.files.filter(f => f.fieldname === `sales_customer_${i}_files`);
-                const uploadedFiles = await Promise.all(customerFiles.map(file => uploadFileToSupabase(file, employeeId, 'sales')));
+                const uploadedFiles = await Promise.all(customerFiles.map(file => uploadFileToCloudinary(file, employeeId, 'sales')));
                 details.customers[i].files = uploadedFiles.map((uf, index) => ({ id: `file-${Date.now()}-${index}`, ...uf }));
             }
         } else if (reportData.type === 'Project') {
              details.updates = details.updates || [];
              for (let i = 0; i < details.updates.length; i++) {
                 const updateFiles = req.files.filter(f => f.fieldname === `project_update_${i}_files`);
-                const uploadedFiles = await Promise.all(updateFiles.map(file => uploadFileToSupabase(file, employeeId, 'projects')));
+                const uploadedFiles = await Promise.all(updateFiles.map(file => uploadFileToCloudinary(file, employeeId, 'projects')));
                 details.updates[i].files = uploadedFiles;
             }
         }
@@ -128,7 +132,6 @@ router.post('/reports', upload.any(), async (req, res) => {
 
         const [result] = await db.query('INSERT INTO reports SET ?', newReportForDb);
         
-        // Fetch and return the complete new report object to sync with frontend state
         const [rows] = await db.query('SELECT * FROM reports WHERE id = ?', [result.insertId]);
         const newReport = { 
             ...reportData, 
@@ -150,19 +153,17 @@ router.put('/reports/:id', upload.any(), async (req, res) => {
     try {
         if (!req.body.reportData) return res.status(400).json({ message: 'reportData is missing.' });
         const reportData = JSON.parse(req.body.reportData);
-        const employeeId = reportData.employeeId; // Use the secure employeeId
+        const employeeId = reportData.employeeId;
 
-        // Fetch existing content
         const [existingRows] = await db.query('SELECT content FROM reports WHERE id = ?', [id]);
         if (existingRows.length === 0) {
             return res.status(404).json({ message: 'Report not found.' });
         }
         const fullContent = safeJsonParse(existingRows[0].content, {});
 
-        // Handle evaluation files
         if (reportData.evaluation) {
             const evaluationFiles = req.files.filter(f => f.fieldname === 'evaluation_files');
-            const uploadedFiles = await Promise.all(evaluationFiles.map(file => uploadFileToSupabase(file, employeeId, 'evaluations')));
+            const uploadedFiles = await Promise.all(evaluationFiles.map(file => uploadFileToCloudinary(file, employeeId, 'evaluations')));
             fullContent.evaluation = reportData.evaluation;
             fullContent.evaluation.files = [
                 ...(fullContent.evaluation.files || []), 
@@ -179,7 +180,6 @@ router.put('/reports/:id', upload.any(), async (req, res) => {
         
         await db.query('UPDATE reports SET ? WHERE id = ?', [dbPayload, id]);
         
-        // Fetch and return the updated report
         const [rows] = await db.query('SELECT * FROM reports WHERE id = ?', [id]);
         const updatedReport = { 
             ...reportData, 
