@@ -21,20 +21,27 @@ const uploadFileToCloudinary = (file, employeeId) => {
     return new Promise((resolve, reject) => {
         const resourceType = getResourceType(file.mimetype);
 
+        const uploadOptions = {
+            folder: `qssun_reports/workflows/${employeeId}`,
+            use_filename: true,
+            unique_filename: false,
+            overwrite: true,
+            resource_type: resourceType
+        };
+
+        // If it's a raw file (like a PDF), add a transformation flag
+        // to tell Cloudinary to serve it for inline viewing.
+        if (resourceType === 'raw') {
+            uploadOptions.transformation = 'fl_inline';
+        }
+
         const uploadStream = cloudinary.uploader.upload_stream(
-            {
-                folder: `qssun_reports/workflows/${employeeId}`,
-                use_filename: true,
-                unique_filename: false,
-                overwrite: true,
-                resource_type: resourceType
-            },
+            uploadOptions,
             (error, result) => {
                 if (error) {
                     return reject(error);
                 }
                 if (result) {
-                    // Return the original URL without modification
                     resolve({ url: result.secure_url, fileName: file.originalname });
                 } else {
                     reject(new Error("Cloudinary upload failed without an error object."));
