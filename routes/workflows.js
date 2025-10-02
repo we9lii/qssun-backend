@@ -9,15 +9,23 @@ const streamifier = require('streamifier');
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
+const getResourceType = (mimetype) => {
+    if (mimetype.startsWith('image/')) return 'image';
+    if (mimetype.startsWith('video/')) return 'video';
+    return 'raw';
+};
+
 // Helper to upload a file to Cloudinary
 const uploadFileToCloudinary = (file, employeeId) => {
     return new Promise((resolve, reject) => {
         const publicId = file.originalname.split('.').slice(0, -1).join('.');
+        const resourceType = getResourceType(file.mimetype);
+
         const uploadStream = cloudinary.uploader.upload_stream(
             {
                 folder: `qssun_reports/workflows/${employeeId}`,
                 public_id: publicId,
-                resource_type: 'auto'
+                resource_type: resourceType
             },
             (error, result) => {
                 if (error) {
@@ -107,28 +115,22 @@ router.post('/workflow-requests', async (req, res) => {
 
         await db.query('INSERT INTO workflow_requests SET ?', newRequestForDb);
         
-        // Return an optimistic response built from the data sent for insertion
-        const optimisticResponse = {
-            id: generatedId,
-            title: title,
-            description: description,
-            type: type,
-            priority: priority,
-            currentStageId: 1,
-            creationDate: now.toISOString(),
-            lastModified: now.toISOString(),
-            stageHistory: stageHistory,
-            employeeId: employeeId,
-        };
+        // Fetch the newly created record to ensure data integrity in the response
+        const query = `
+            SELECT w.*, u.username as employee_id_username
+            FROM workflow_requests w
+            LEFT JOIN users u ON w.user_id = u.id
+            WHERE w.id = ?
+        `;
+        const [newRows] = await db.query(query, [generatedId]);
 
-        res.status(201).json(optimisticResponse);
+        res.status(201).json(buildRequestForFrontend(newRows[0]));
 
     } catch (error) {
         console.error('Error creating workflow request:', error);
         res.status(500).json({ message: 'An internal server error occurred.' });
     }
 });
-
 
 // PUT /api/workflow-requests/:id - Update an existing request
 router.put('/workflow-requests/:id', upload.any(), async (req, res) => {
@@ -194,14 +196,16 @@ router.put('/workflow-requests/:id', upload.any(), async (req, res) => {
 
         if (result.affectedRows === 0) return res.status(404).json({ message: 'Workflow request not found.'});
         
-        // Return an optimistic response built from the data sent for update
-        const optimisticResponse = {
-            ...requestData,
-            lastModified: now.toISOString(),
-            stageHistory: stageHistory,
-        };
+        // Fetch the updated record from the DB to return the true persisted state
+        const query = `
+            SELECT w.*, u.username as employee_id_username
+            FROM workflow_requests w
+            LEFT JOIN users u ON w.user_id = u.id
+            WHERE w.id = ?
+        `;
+        const [updatedRows] = await db.query(query, [id]);
         
-        res.json(optimisticResponse);
+        res.json(buildRequestForFrontend(updatedRows[0]));
 
     } catch (error) {
         console.error('Error updating workflow request:', error);

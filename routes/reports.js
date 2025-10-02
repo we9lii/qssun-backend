@@ -9,15 +9,23 @@ const streamifier = require('streamifier');
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
+const getResourceType = (mimetype) => {
+    if (mimetype.startsWith('image/')) return 'image';
+    if (mimetype.startsWith('video/')) return 'video';
+    return 'raw';
+};
+
 // Helper to upload a file to Cloudinary
 const uploadFileToCloudinary = (file, employeeId, folder) => {
     return new Promise((resolve, reject) => {
         const publicId = file.originalname.split('.').slice(0, -1).join('.');
+        const resourceType = getResourceType(file.mimetype);
+
         const uploadStream = cloudinary.uploader.upload_stream(
             {
                 folder: `qssun_reports/${folder}/${employeeId}`,
                 public_id: publicId,
-                resource_type: 'auto'
+                resource_type: resourceType
             },
             (error, result) => {
                 if (error) {
