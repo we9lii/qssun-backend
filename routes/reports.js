@@ -35,16 +35,9 @@ const uploadFileToCloudinary = (file, employeeId, folder) => {
                     return reject(error);
                 }
                 if (result) {
-                    let finalUrl = result.secure_url;
-                     // For 'raw' files like PDFs, add the 'fl_inline' flag to the URL
-                    // to suggest the browser should display it inline instead of downloading.
-                    if (result.resource_type === 'raw') {
-                        const parts = finalUrl.split('/upload/');
-                        if (parts.length === 2) {
-                            finalUrl = `${parts[0]}/upload/fl_inline/${parts[1]}`;
-                        }
-                    }
-                    resolve({ url: finalUrl, fileName: file.originalname });
+                    // The URL from Cloudinary is now used directly, relying on the account settings.
+                    // The manual 'fl_inline' modification has been removed.
+                    resolve({ url: result.secure_url, fileName: file.originalname });
                 } else {
                     reject(new Error("Cloudinary upload failed without an error object."));
                 }
