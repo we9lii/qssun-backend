@@ -154,10 +154,16 @@ router.put('/workflow-requests/:id', upload.any(), async (req, res) => {
         }
         
         const dbPayload = {
+            title: requestData.title,
+            description: requestData.description,
+            priority: requestData.priority,
             current_stage_id: requestData.currentStageId,
             stage_history: JSON.stringify(requestData.stageHistory),
             last_modified: new Date(),
         };
+
+        // Remove any keys that are undefined so they don't overwrite existing data in the DB
+        Object.keys(dbPayload).forEach(key => dbPayload[key] === undefined && delete dbPayload[key]);
 
         const [result] = await db.query('UPDATE workflow_requests SET ? WHERE id = ?', [dbPayload, id]);
 
