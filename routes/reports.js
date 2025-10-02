@@ -12,7 +12,6 @@ const upload = multer({ storage: storage });
 const getResourceType = (mimetype) => {
     if (mimetype.startsWith('image/')) return 'image';
     if (mimetype.startsWith('video/')) return 'video';
-    // Correctly classify PDFs and other documents as 'raw'
     return 'raw';
 };
 
@@ -29,12 +28,6 @@ const uploadFileToCloudinary = (file, employeeId, folder) => {
             resource_type: resourceType
         };
 
-        // If it's a raw file (like a PDF), add a transformation flag
-        // to tell Cloudinary to serve it for inline viewing.
-        if (resourceType === 'raw') {
-            uploadOptions.transformation = 'fl_inline';
-        }
-
         const uploadStream = cloudinary.uploader.upload_stream(
             uploadOptions,
             (error, result) => {
@@ -42,7 +35,13 @@ const uploadFileToCloudinary = (file, employeeId, folder) => {
                     return reject(error);
                 }
                 if (result) {
-                    resolve({ url: result.secure_url, fileName: file.originalname });
+                    let finalUrl = result.secure_url;
+                    // If it's a raw file, inject 'fl_inline' for browser viewing.
+                    if (result.resource_type === 'raw' && finalUrl.includes('/upload/')) {
+                        const parts = finalUrl.split('/upload/');
+                        finalUrl = `${parts[0]}/upload/fl_inline/${parts[1]}`;
+                    }
+                    resolve({ url: finalUrl, fileName: file.originalname });
                 } else {
                     reject(new Error("Cloudinary upload failed without an error object."));
                 }
