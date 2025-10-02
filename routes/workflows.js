@@ -24,10 +24,9 @@ const uploadFileToCloudinary = (file, employeeId) => {
         const uploadStream = cloudinary.uploader.upload_stream(
             {
                 folder: `qssun_reports/workflows/${employeeId}`,
-                // These options are crucial: they preserve the original filename and extension in the URL.
                 use_filename: true,
                 unique_filename: false,
-                overwrite: true, // Allow overwriting files with the same name
+                overwrite: true,
                 resource_type: resourceType
             },
             (error, result) => {
@@ -35,9 +34,16 @@ const uploadFileToCloudinary = (file, employeeId) => {
                     return reject(error);
                 }
                 if (result) {
-                    // The URL from Cloudinary is now used directly, relying on the account settings.
-                    // The manual 'fl_inline' modification has been removed.
-                    resolve({ url: result.secure_url, fileName: file.originalname });
+                    let finalUrl = result.secure_url;
+                    // For 'raw' files like PDFs, inject 'fl_inline' into the URL
+                    // to force the browser to display them instead of downloading.
+                    if (resourceType === 'raw' && finalUrl) {
+                        const urlParts = finalUrl.split('/upload/');
+                        if (urlParts.length === 2) {
+                            finalUrl = `${urlParts[0]}/upload/fl_inline/${urlParts[1]}`;
+                        }
+                    }
+                    resolve({ url: finalUrl, fileName: file.originalname });
                 } else {
                     reject(new Error("Cloudinary upload failed without an error object."));
                 }
