@@ -10,7 +10,8 @@ const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
 const getResourceType = (mimetype) => {
-    if (mimetype.startsWith('image/')) return 'image';
+    // Treat PDFs like images to get a direct viewable link from Cloudinary
+    if (mimetype.startsWith('image/') || mimetype === 'application/pdf') return 'image';
     if (mimetype.startsWith('video/')) return 'video';
     return 'raw';
 };
