@@ -44,6 +44,24 @@ const safeJsonParse = (json, defaultValue) => {
     }
 };
 
+// Helper function to build the full request object for the frontend from a DB row
+const buildRequestForFrontend = (dbRow) => {
+    if (!dbRow) return null;
+    return {
+        id: dbRow.id,
+        title: dbRow.title || 'N/A',
+        description: dbRow.description || '',
+        type: dbRow.type || 'استيراد',
+        priority: dbRow.priority || 'منخفضة',
+        currentStageId: dbRow.current_stage_id || 1,
+        creationDate: dbRow.creation_date || new Date().toISOString(),
+        lastModified: dbRow.last_modified || new Date().toISOString(),
+        stageHistory: safeJsonParse(dbRow.stage_history, []),
+        employeeId: dbRow.employee_id_username,
+    };
+};
+
+
 // GET /api/workflow-requests
 router.get('/workflow-requests', async (req, res) => {
     try {
@@ -55,18 +73,7 @@ router.get('/workflow-requests', async (req, res) => {
         `;
         const [rows] = await db.query(query);
 
-        const requests = rows.map(req => ({
-            id: req.id,
-            title: req.title || 'N/A',
-            description: req.description || '',
-            type: req.type || 'استيراد',
-            priority: req.priority || 'منخفضة',
-            currentStageId: req.current_stage_id || 1,
-            creationDate: req.creation_date || new Date().toISOString(),
-            lastModified: req.last_modified || new Date().toISOString(),
-            stageHistory: safeJsonParse(req.stage_history, []),
-            employeeId: req.employee_id_username,
-        }));
+        const requests = rows.map(buildRequestForFrontend);
         res.json(requests);
     } catch (error) {
         console.error('Error fetching workflow requests:', error);
@@ -83,9 +90,10 @@ router.post('/workflow-requests', async (req, res) => {
         
         const userId = userRows[0].id;
         const now = new Date();
+        const generatedId = `REQ-${Date.now().toString().slice(-4)}`;
 
         const newRequestForDb = {
-            id: `REQ-${Date.now().toString().slice(-4)}`,
+            id: generatedId,
             user_id: userId,
             title,
             description,
@@ -99,20 +107,16 @@ router.post('/workflow-requests', async (req, res) => {
 
         await db.query('INSERT INTO workflow_requests SET ?', newRequestForDb);
         
-        // Construct the response directly to avoid read-after-write issues.
-        const requestForFrontend = {
-            id: newRequestForDb.id,
-            title,
-            description,
-            type,
-            priority,
-            currentStageId: 1,
-            creationDate: now.toISOString(),
-            lastModified: now.toISOString(),
-            stageHistory: stageHistory, // Send the original object back
-            employeeId: employeeId,
-        };
-        res.status(201).json(requestForFrontend);
+        // Fetch the newly created record to ensure data integrity in the response
+        const query = `
+            SELECT w.*, u.username as employee_id_username
+            FROM workflow_requests w
+            LEFT JOIN users u ON w.user_id = u.id
+            WHERE w.id = ?
+        `;
+        const [newRows] = await db.query(query, [generatedId]);
+
+        res.status(201).json(buildRequestForFrontend(newRows[0]));
 
     } catch (error) {
         console.error('Error creating workflow request:', error);
@@ -151,18 +155,22 @@ router.put('/workflow-requests/:id', upload.any(), async (req, res) => {
                     ...uploadedFile
                 };
                 
-                // Find the correct history item to add the document to.
-                // This logic correctly handles both new approvals and edits of past stages.
-                let itemFound = false;
-                for(let i = stageHistory.length - 1; i >= 0; i--) {
-                    if (!stageHistory[i].documents.find(d => d.id === docId)) {
-                        stageHistory[i].documents.push(newDocument);
-                        itemFound = true;
+                let documentPlaced = false;
+                // Try to find and update an existing document placeholder by ID. This handles edits.
+                for (const historyItem of stageHistory) {
+                    if (!historyItem.documents) continue;
+                    const docIndex = historyItem.documents.findIndex(d => d.id === docId);
+                    if (docIndex > -1) {
+                        historyItem.documents[docIndex] = { ...historyItem.documents[docIndex], ...newDocument };
+                        documentPlaced = true;
                         break;
                     }
                 }
-                if (!itemFound) {
-                    console.warn(`Could not find a history item to attach document ${docId}`);
+                // If not placed, it must be a new document for the latest stage. This handles new stage approvals.
+                if (!documentPlaced && stageHistory.length > 0) {
+                    const latestHistoryItem = stageHistory[stageHistory.length - 1];
+                    if (!latestHistoryItem.documents) latestHistoryItem.documents = [];
+                    latestHistoryItem.documents.push(newDocument);
                 }
             }
         }
@@ -176,20 +184,20 @@ router.put('/workflow-requests/:id', upload.any(), async (req, res) => {
             last_modified: now,
         };
 
-        // Remove any keys that are undefined so they don't overwrite existing data in the DB
-        Object.keys(dbPayload).forEach(key => dbPayload[key] === undefined && delete dbPayload[key]);
-
         const [result] = await db.query('UPDATE workflow_requests SET ? WHERE id = ?', [dbPayload, id]);
 
         if (result.affectedRows === 0) return res.status(404).json({ message: 'Workflow request not found.'});
         
-        // Construct the response directly from the data we just processed
-        const updatedRequestForFrontend = {
-            ...requestData,
-            stageHistory: stageHistory, // Send the modified history object back
-            lastModified: now.toISOString(),
-        };
-        res.json(updatedRequestForFrontend);
+        // Fetch the updated record from the DB to return the true persisted state
+        const query = `
+            SELECT w.*, u.username as employee_id_username
+            FROM workflow_requests w
+            LEFT JOIN users u ON w.user_id = u.id
+            WHERE w.id = ?
+        `;
+        const [updatedRows] = await db.query(query, [id]);
+        
+        res.json(buildRequestForFrontend(updatedRows[0]));
 
     } catch (error) {
         console.error('Error updating workflow request:', error);
