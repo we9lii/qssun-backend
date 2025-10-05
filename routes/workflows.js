@@ -202,11 +202,23 @@ router.put('/workflow-requests/:id', upload.any(), checkImportExportPermission, 
             current_stage_id: requestData.currentStageId,
             stage_history: JSON.stringify(requestData.stageHistory),
             last_modified: new Date(),
-            container_count_20ft: requestData.containerCount20ft ?? null,
-            container_count_40ft: requestData.containerCount40ft ?? null,
-            expected_departure_date: requestData.expectedDepartureDate || null,
-            departure_port: requestData.departurePort || null,
         };
+
+        // Conditionally add new fields only if they exist in the request payload.
+        // This prevents errors when moving from stages that don't have these fields.
+        if (requestData.hasOwnProperty('containerCount20ft')) {
+            dbPayload.container_count_20ft = requestData.containerCount20ft ?? null;
+        }
+        if (requestData.hasOwnProperty('containerCount40ft')) {
+            dbPayload.container_count_40ft = requestData.containerCount40ft ?? null;
+        }
+        if (requestData.hasOwnProperty('expectedDepartureDate')) {
+            dbPayload.expected_departure_date = requestData.expectedDepartureDate || null;
+        }
+        if (requestData.hasOwnProperty('departurePort')) {
+            dbPayload.departure_port = requestData.departurePort || null;
+        }
+
 
         const [result] = await db.query('UPDATE workflow_requests SET ? WHERE id = ?', [dbPayload, id]);
 
