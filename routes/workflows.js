@@ -9,14 +9,55 @@ const streamifier = require('streamifier');
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
+// Security Middleware to check for Import/Export permission
+const checkImportExportPermission = async (req, res, next) => {
+    try {
+        let employeeId;
+        
+        // Extract employeeId based on the request type (POST or PUT with multipart/form-data)
+        if (req.body.reportData) { // From a regular report update
+             const reportData = JSON.parse(req.body.reportData);
+             employeeId = reportData.employeeId;
+        } else if (req.body.requestData) { // From a workflow update
+             const requestData = JSON.parse(req.body.requestData);
+             employeeId = requestData.employeeId;
+        } else { // From a workflow creation
+            employeeId = req.body.employeeId;
+        }
+
+        if (!employeeId) {
+            return res.status(401).json({ message: 'Unauthorized: User ID is missing.' });
+        }
+
+        const [userRows] = await db.query('SELECT role, has_import_export_permission FROM users WHERE username = ?', [employeeId]);
+
+        if (userRows.length === 0) {
+            return res.status(404).json({ message: 'User not found.' });
+        }
+
+        const user = userRows[0];
+        
+        // Allow access if the user is an Admin or has the specific permission
+        if (user.role === 'admin' || user.has_import_export_permission) {
+            next();
+        } else {
+            return res.status(403).json({ message: 'Access Denied: You do not have permission for this operation.' });
+        }
+    } catch (error) {
+        console.error('Permission check error:', error);
+        res.status(500).json({ message: 'An internal server error occurred during permission check.' });
+    }
+};
+
+
 // Helper to upload a file to Cloudinary
 const uploadFileToCloudinary = (file, employeeId) => {
     return new Promise((resolve, reject) => {
+        const publicId = file.originalname.split('.').slice(0, -1).join('.');
         const uploadStream = cloudinary.uploader.upload_stream(
             {
                 folder: `qssun_reports/workflows/${employeeId}`,
-                use_filename: true,
-                unique_filename: true,
+                public_id: publicId,
                 resource_type: 'auto'
             },
             (error, result) => {
@@ -75,7 +116,7 @@ router.get('/workflow-requests', async (req, res) => {
 });
 
 // POST /api/workflow-requests - Create a new request
-router.post('/workflow-requests', async (req, res) => {
+router.post('/workflow-requests', checkImportExportPermission, async (req, res) => {
     const { title, description, type, priority, employeeId, stageHistory } = req.body;
     try {
         const [userRows] = await db.query('SELECT id FROM users WHERE username = ?', [employeeId]);
@@ -117,7 +158,7 @@ router.post('/workflow-requests', async (req, res) => {
 });
 
 // PUT /api/workflow-requests/:id - Update an existing request
-router.put('/workflow-requests/:id', upload.any(), async (req, res) => {
+router.put('/workflow-requests/:id', upload.any(), checkImportExportPermission, async (req, res) => {
     const { id } = req.params;
     try {
         if (!req.body.requestData) return res.status(400).json({ message: 'requestData is missing.' });
@@ -128,60 +169,28 @@ router.put('/workflow-requests/:id', upload.any(), async (req, res) => {
         if (!employeeId) return res.status(400).json({ message: 'Employee ID is missing.' });
 
         if (req.files && req.files.length > 0) {
-            // This is the new logic to handle file uploads correctly
-            const stageHistory = requestData.stageHistory;
-
-            // Go through each history item to find and replace temporary blob URLs from edits
-            for (const historyItem of stageHistory) {
-                if (Array.isArray(historyItem.documents)) {
-                    for (let i = 0; i < historyItem.documents.length; i++) {
-                        const doc = historyItem.documents[i];
-                        if (doc && doc.url && doc.url.startsWith('blob:')) {
-                            // Find the corresponding file uploaded from the frontend
-                            const fileToUpload = req.files.find(f => {
-                                const [fileDocId] = f.originalname.split('___');
-                                return fileDocId === doc.id;
-                            });
-
-                            if (fileToUpload) {
-                                // Reconstruct original filename and upload
-                                const [,,, ...originalNameParts] = fileToUpload.originalname.split('___');
-                                const originalName = originalNameParts.join('___');
-                                
-                                const uploadedFile = await uploadFileToCloudinary({ ...fileToUpload, originalname: originalName }, employeeId);
-                                
-                                // Replace blob URL with permanent Cloudinary URL
-                                historyItem.documents[i] = { ...doc, url: uploadedFile.url, fileName: uploadedFile.fileName, file: undefined };
-                            }
-                        }
-                    }
+            const lastHistoryItem = requestData.stageHistory[requestData.stageHistory.length - 1];
+            
+            for (const file of req.files) {
+                 const nameParts = file.originalname.split('___');
+                if (nameParts.length !== 3) {
+                    console.warn(`Skipping file with invalid name format: ${file.originalname}`);
+                    continue;
                 }
-            }
-
-            // Handle new files being added to the *latest* history item when approving a stage
-            const lastHistoryItem = stageHistory[stageHistory.length - 1];
-            if (lastHistoryItem) {
-                 const newFilesForThisStage = req.files.filter(f => {
-                    const [fileDocId] = f.originalname.split('___');
-                    // Check if this file is not one of the blobs we just replaced.
-                    // New files will have an ID that doesn't exist in the document list yet.
-                    return !stageHistory.some(h => h.documents.some(d => d.id === fileDocId));
-                });
-
-                const uploadedNewFiles = await Promise.all(newFilesForThisStage.map(async (file) => {
-                    const [docId, docType, ...originalNameParts] = file.originalname.split('___');
-                    const originalName = originalNameParts.join('___');
-                    const uploadedFile = await uploadFileToCloudinary({ ...file, originalname: originalName }, employeeId);
-                    return {
-                        id: docId,
-                        type: docType,
-                        uploadDate: new Date().toISOString(),
-                        ...uploadedFile
-                    };
-                }));
+                const [docId, docType, originalName] = nameParts;
+                const uploadedFile = await uploadFileToCloudinary({ ...file, originalname: originalName }, employeeId);
                 
-                if (!lastHistoryItem.documents) lastHistoryItem.documents = [];
-                lastHistoryItem.documents.push(...uploadedNewFiles);
+                const document = {
+                    id: docId,
+                    type: docType,
+                    uploadDate: new Date().toISOString(),
+                    ...uploadedFile
+                };
+                
+                if (lastHistoryItem) {
+                    if (!lastHistoryItem.documents) lastHistoryItem.documents = [];
+                    lastHistoryItem.documents.push(document);
+                }
             }
         }
         
@@ -214,21 +223,6 @@ router.put('/workflow-requests/:id', upload.any(), async (req, res) => {
 
     } catch (error) {
         console.error('Error updating workflow request:', error);
-        res.status(500).json({ message: 'An internal server error occurred.' });
-    }
-});
-
-// DELETE /api/workflow-requests/:id - Delete a request
-router.delete('/workflow-requests/:id', async (req, res) => {
-    const { id } = req.params;
-    try {
-        const [result] = await db.query('DELETE FROM workflow_requests WHERE id = ?', [id]);
-        if (result.affectedRows === 0) {
-            return res.status(404).json({ message: 'Workflow request not found.' });
-        }
-        res.status(200).json({ message: 'Workflow request deleted successfully.' });
-    } catch (error) {
-        console.error('Error deleting workflow request:', error);
         res.status(500).json({ message: 'An internal server error occurred.' });
     }
 });
