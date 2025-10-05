@@ -12,11 +12,11 @@ const upload = multer({ storage: storage });
 // Helper to upload a file to Cloudinary
 const uploadFileToCloudinary = (file, employeeId, folder) => {
     return new Promise((resolve, reject) => {
+        const publicId = file.originalname.split('.').slice(0, -1).join('.');
         const uploadStream = cloudinary.uploader.upload_stream(
             {
                 folder: `qssun_reports/${folder}/${employeeId}`,
-                use_filename: true,
-                unique_filename: true,
+                public_id: publicId,
                 resource_type: 'auto'
             },
             (error, result) => {
@@ -155,37 +155,74 @@ router.put('/reports/:id', upload.any(), async (req, res) => {
         const reportData = JSON.parse(req.body.reportData);
         const employeeId = reportData.employeeId;
 
-        const [existingRows] = await db.query('SELECT content FROM reports WHERE id = ?', [id]);
-        if (existingRows.length === 0) {
-            return res.status(404).json({ message: 'Report not found.' });
+        // Start with new details from frontend. This has the updated steps.
+        let details = reportData.details || {};
+
+        // Handle file uploads and merge them.
+        if (reportData.type === 'Project') {
+            for (let i = 0; i < details.updates.length; i++) {
+                const updateFiles = req.files.filter(f => f.fieldname === `project_update_${i}_files`);
+                const uploadedFiles = await Promise.all(updateFiles.map(file => uploadFileToCloudinary(file, employeeId, 'projects')));
+                
+                // Combine existing files (sent back by frontend) with newly uploaded ones.
+                details.updates[i].files = [...(details.updates[i].files || []), ...uploadedFiles];
+            }
+        } else if (reportData.type === 'Sales') {
+             for (let i = 0; i < details.customers.length; i++) {
+                const customerFiles = req.files.filter(f => f.fieldname === `sales_customer_${i}_files`);
+                const uploadedFiles = await Promise.all(customerFiles.map(file => uploadFileToCloudinary(file, employeeId, 'sales')));
+                const newFileObjects = uploadedFiles.map((uf, index) => ({ id: `file-${Date.now()}-${index}`, ...uf }));
+
+                details.customers[i].files = [...(details.customers[i].files || []), ...newFileObjects];
+            }
         }
-        const fullContent = safeJsonParse(existingRows[0].content, {});
 
         if (reportData.evaluation) {
             const evaluationFiles = req.files.filter(f => f.fieldname === 'evaluation_files');
             const uploadedFiles = await Promise.all(evaluationFiles.map(file => uploadFileToCloudinary(file, employeeId, 'evaluations')));
-            fullContent.evaluation = reportData.evaluation;
-            fullContent.evaluation.files = [
-                ...(fullContent.evaluation.files || []), 
-                ...uploadedFiles.map((uf, index) => ({ id: `eval-${Date.now()}-${index}`, ...uf }))
-            ];
+            
+            const newFileObjects = uploadedFiles.map((uf, index) => ({ id: `eval-${Date.now()}-${index}`, ...uf }));
+            
+            details.evaluation = reportData.evaluation;
+            details.evaluation.files = [...(reportData.evaluation.files || []), ...newFileObjects];
         }
-        
-        fullContent.modifications = reportData.modifications;
 
+        // Add modifications log.
+        details.modifications = reportData.modifications;
+        
         const dbPayload = {
-            content: JSON.stringify(fullContent),
+            content: JSON.stringify(details), // The content IS the fully updated details object.
             status: reportData.status,
         };
         
         await db.query('UPDATE reports SET ? WHERE id = ?', [dbPayload, id]);
         
-        const [rows] = await db.query('SELECT * FROM reports WHERE id = ?', [id]);
-        const updatedReport = { 
-            ...reportData, 
-            details: safeJsonParse(rows[0].content) 
+        // Fetch and return the full updated report from DB to ensure data integrity.
+        const query = `
+            SELECT 
+                r.id, r.user_id, r.report_type, r.content, r.status, r.created_at,
+                u.full_name as employee_name, u.department, u.username as employee_id_username,
+                b.name as branch_name
+            FROM reports r
+            LEFT JOIN users u ON r.user_id = u.id
+            LEFT JOIN branches b ON r.branch_id = b.id
+            WHERE r.id = ?
+        `;
+        const [rows] = await db.query(query, [id]);
+        const row = rows[0];
+        const updatedReportForFrontend = {
+            id: row.id.toString(),
+            employeeId: row.employee_id_username,
+            employeeName: row.employee_name,
+            branch: row.branch_name,
+            department: row.department,
+            type: row.report_type,
+            date: row.created_at,
+            status: row.status,
+            details: safeJsonParse(row.content, {}),
         };
-        res.json(updatedReport);
+
+        res.json(updatedReportForFrontend);
 
     } catch (error) {
         console.error('Error updating report:', error);
