@@ -68,7 +68,7 @@ router.get('/reports', async (req, res) => {
             branch: row.branch_name || 'N/A',
             department: row.department || 'N/A',
             type: row.report_type || 'Inquiry',
-            date: row.created_at || new Date().toISOString(),
+            date: row.created_at ? new Date(row.created_at).toISOString() : new Date().toISOString(),
             status: row.status || 'Pending',
             details: safeJsonParse(row.content, {}),
         }));
@@ -136,7 +136,7 @@ router.post('/reports', upload.any(), async (req, res) => {
         const newReport = { 
             ...reportData, 
             id: result.insertId.toString(), 
-            date: rows[0].created_at, 
+            date: new Date(rows[0].created_at).toISOString(), 
             details: safeJsonParse(rows[0].content) 
         };
         res.status(201).json(newReport);
@@ -218,7 +218,7 @@ router.put('/reports/:id', upload.any(), async (req, res) => {
             branch: row.branch_name,
             department: row.department,
             type: row.report_type,
-            date: row.created_at,
+            date: new Date(row.created_at).toISOString(),
             status: row.status,
             details: safeJsonParse(row.content, {}),
         };

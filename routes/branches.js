@@ -12,7 +12,7 @@ router.get('/branches', async (req, res) => {
             location: branch.location || 'N/A',
             phone: branch.phone || 'N/A',
             manager: branch.manager_name || 'N/A',
-            creationDate: branch.created_at || new Date().toISOString(),
+            creationDate: branch.created_at ? new Date(branch.created_at).toISOString() : new Date().toISOString(),
         }));
         res.json(branches);
     } catch (error) {
@@ -39,7 +39,7 @@ router.post('/branches', async (req, res) => {
             location: rows[0].location,
             phone: rows[0].phone,
             manager: rows[0].manager_name,
-            creationDate: rows[0].created_at,
+            creationDate: new Date(rows[0].created_at).toISOString(),
         };
         res.status(201).json(createdBranch);
     } catch (error) {
@@ -70,7 +70,7 @@ router.put('/branches/:id', async (req, res) => {
             location: rows[0].location,
             phone: rows[0].phone,
             manager: rows[0].manager_name,
-            creationDate: rows[0].created_at,
+            creationDate: new Date(rows[0].created_at).toISOString(),
         };
         res.json(branchForFrontend);
     } catch (error) {
