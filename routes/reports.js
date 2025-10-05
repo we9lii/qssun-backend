@@ -198,7 +198,7 @@ router.put('/reports/:id', upload.any(), async (req, res) => {
         await db.query('UPDATE reports SET ? WHERE id = ?', [dbPayload, id]);
         
         // Fetch and return the full updated report from DB to ensure data integrity.
-        const query = `
+        const query = \`
             SELECT 
                 r.id, r.user_id, r.report_type, r.content, r.status, r.created_at,
                 u.full_name as employee_name, u.department, u.username as employee_id_username,
@@ -207,7 +207,7 @@ router.put('/reports/:id', upload.any(), async (req, res) => {
             LEFT JOIN users u ON r.user_id = u.id
             LEFT JOIN branches b ON r.branch_id = b.id
             WHERE r.id = ?
-        `;
+        \`;
         const [rows] = await db.query(query, [id]);
         const row = rows[0];
         const updatedReportForFrontend = {
