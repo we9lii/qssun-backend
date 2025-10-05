@@ -107,6 +107,10 @@ router.get('/workflow-requests', async (req, res) => {
             lastModified: req.last_modified || new Date().toISOString(),
             stageHistory: safeJsonParse(req.stage_history, []),
             employeeId: req.employee_id_username,
+            containerCount20ft: req.container_count_20ft,
+            containerCount40ft: req.container_count_40ft,
+            expectedDepartureDate: req.expected_departure_date,
+            departurePort: req.departure_port,
         }));
         res.json(requests);
     } catch (error) {
@@ -198,6 +202,10 @@ router.put('/workflow-requests/:id', upload.any(), checkImportExportPermission, 
             current_stage_id: requestData.currentStageId,
             stage_history: JSON.stringify(requestData.stageHistory),
             last_modified: new Date(),
+            container_count_20ft: requestData.containerCount20ft || null,
+            container_count_40ft: requestData.containerCount40ft || null,
+            expected_departure_date: requestData.expectedDepartureDate || null,
+            departure_port: requestData.departurePort || null,
         };
 
         const [result] = await db.query('UPDATE workflow_requests SET ? WHERE id = ?', [dbPayload, id]);
@@ -208,7 +216,7 @@ router.put('/workflow-requests/:id', upload.any(), checkImportExportPermission, 
         
         const row = rows[0];
         const updatedRequest = {
-             id: row.id,
+            id: row.id,
             title: row.title || 'N/A',
             description: row.description || '',
             type: row.type || 'استيراد',
@@ -218,6 +226,10 @@ router.put('/workflow-requests/:id', upload.any(), checkImportExportPermission, 
             lastModified: row.last_modified || new Date().toISOString(),
             stageHistory: safeJsonParse(row.stage_history, []),
             employeeId: row.employee_id_username,
+            containerCount20ft: row.container_count_20ft,
+            containerCount40ft: row.container_count_40ft,
+            expectedDepartureDate: row.expected_departure_date,
+            departurePort: row.departure_port,
         };
         res.json(updatedRequest);
 
