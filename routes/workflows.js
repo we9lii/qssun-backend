@@ -21,7 +21,7 @@ const checkImportExportPermission = async (req, res, next) => {
         } else if (req.body.requestData) { // From a workflow update
              const requestData = JSON.parse(req.body.requestData);
              employeeId = requestData.employeeId;
-        } else { // From a workflow creation
+        } else { // From a workflow creation or DELETE
             employeeId = req.body.employeeId;
         }
 
@@ -223,6 +223,21 @@ router.put('/workflow-requests/:id', upload.any(), checkImportExportPermission, 
 
     } catch (error) {
         console.error('Error updating workflow request:', error);
+        res.status(500).json({ message: 'An internal server error occurred.' });
+    }
+});
+
+// DELETE /api/workflow-requests/:id - Delete a request
+router.delete('/workflow-requests/:id', checkImportExportPermission, async (req, res) => {
+    const { id } = req.params;
+    try {
+        const [result] = await db.query('DELETE FROM workflow_requests WHERE id = ?', [id]);
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ message: 'Request not found.' });
+        }
+        res.status(200).json({ message: 'Workflow request deleted successfully.' });
+    } catch (error) {        
+        console.error('Error deleting workflow request:', error);
         res.status(500).json({ message: 'An internal server error occurred.' });
     }
 });
