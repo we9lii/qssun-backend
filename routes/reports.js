@@ -12,7 +12,7 @@ const upload = multer({ storage: storage });
 // Helper to upload a file to Cloudinary
 const uploadFileToCloudinary = (file, employeeId, folder) => {
     return new Promise((resolve, reject) => {
-        const publicId = file.originalname.split('.').slice(0, -1).join('.');
+        const publicId = file.originalname.split('.').slice(0, -1).join('.').trim();
         const uploadStream = cloudinary.uploader.upload_stream(
             {
                 folder: `qssun_reports/${folder}/${employeeId}`,
@@ -106,7 +106,7 @@ router.post('/reports', upload.any(), async (req, res) => {
              for (let i = 0; i < details.updates.length; i++) {
                 const updateFiles = req.files.filter(f => f.fieldname === `project_update_${i}_files`);
                 const uploadedFiles = await Promise.all(updateFiles.map(file => uploadFileToCloudinary(file, employeeId, 'projects')));
-                details.updates[i].files = uploadedFiles;
+                details.updates[i].files = uploadedFiles.map((uf, index) => ({ id: `proj-${Date.now()}-${index}`, ...uf }));
             }
         }
         
@@ -163,9 +163,10 @@ router.put('/reports/:id', upload.any(), async (req, res) => {
             for (let i = 0; i < details.updates.length; i++) {
                 const updateFiles = req.files.filter(f => f.fieldname === `project_update_${i}_files`);
                 const uploadedFiles = await Promise.all(updateFiles.map(file => uploadFileToCloudinary(file, employeeId, 'projects')));
+                const newFileObjects = uploadedFiles.map((uf, index) => ({ id: `proj-${Date.now()}-${index}`, ...uf }));
                 
                 // Combine existing files (sent back by frontend) with newly uploaded ones.
-                details.updates[i].files = [...(details.updates[i].files || []), ...uploadedFiles];
+                details.updates[i].files = [...(details.updates[i].files || []), ...newFileObjects];
             }
         } else if (reportData.type === 'Sales') {
              for (let i = 0; i < details.customers.length; i++) {

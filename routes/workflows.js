@@ -53,7 +53,7 @@ const checkImportExportPermission = async (req, res, next) => {
 // Helper to upload a file to Cloudinary
 const uploadFileToCloudinary = (file, employeeId) => {
     return new Promise((resolve, reject) => {
-        const publicId = file.originalname.split('.').slice(0, -1).join('.');
+        const publicId = file.originalname.split('.').slice(0, -1).join('.').trim();
         const uploadStream = cloudinary.uploader.upload_stream(
             {
                 folder: `qssun_reports/workflows/${employeeId}`,
