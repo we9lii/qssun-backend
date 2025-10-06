@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db.js');
+const bcrypt = require('bcrypt');
 
 // POST /api/login
 router.post('/login', async (req, res) => {
@@ -20,9 +21,9 @@ router.post('/login', async (req, res) => {
         
         const user = userRows[0];
 
-        // 2. Check the password (in a real app, use bcrypt.compare)
-        if (user.password !== password) {
-            console.warn('Security Warning: Storing and comparing passwords in plain text is insecure. Use a hashing library like bcrypt.');
+        // 2. Check the password using bcrypt
+        const isPasswordCorrect = await bcrypt.compare(password, user.password);
+        if (!isPasswordCorrect) {
             return res.status(401).json({ message: 'Incorrect password.' });
         }
         
@@ -52,6 +53,7 @@ router.post('/login', async (req, res) => {
             joinDate: user.created_at || new Date().toISOString(),
             employeeType: user.employee_type || 'Technician',
             hasImportExportPermission: !!user.has_import_export_permission,
+            isFirstLogin: !!user.is_first_login,
         };
 
         res.json(userForFrontend);

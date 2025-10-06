@@ -1,6 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db.js');
+const bcrypt = require('bcrypt');
+const saltRounds = 10; // Standard salt rounds for bcrypt
 
 // GET /api/users
 router.get('/users', async (req, res) => {
@@ -45,10 +47,11 @@ router.post('/users', async (req, res) => {
             }
         }
         
-        // SECURITY: Passwords should be hashed before storing.
+        const hashedPassword = await bcrypt.hash(password, saltRounds);
+        
         const newUser = {
             username: employeeId,
-            password: password, // In a real app, hash this password
+            password: hashedPassword,
             email: email,
             full_name: name,
             phone: phone,
@@ -178,12 +181,11 @@ router.put('/users/profile', async (req, res) => {
     }
 
     try {
-        // In a real app, you MUST hash the password here using bcrypt
-        // const hashedPassword = await bcrypt.hash(password, 10);
+        const hashedPassword = await bcrypt.hash(password, saltRounds);
         
         const [result] = await db.query(
             'UPDATE users SET full_name = ?, phone = ?, password = ?, is_first_login = 0 WHERE id = ?',
-            [name, phone, password, userId]
+            [name, phone, hashedPassword, userId]
         );
 
         if (result.affectedRows === 0) {
@@ -214,14 +216,15 @@ router.put('/users/change-password', async (req, res) => {
         }
         const user = userRows[0];
 
-        // 2. Check current password (plain text, as per existing system)
-        if (user.password !== currentPassword) {
+        // 2. Check current password with bcrypt
+        const isCurrentPasswordCorrect = await bcrypt.compare(currentPassword, user.password);
+        if (!isCurrentPasswordCorrect) {
             return res.status(400).json({ message: 'كلمة المرور الحالية غير صحيحة.' });
         }
 
-        // 3. Update to the new password (plain text)
-        // SECURITY WARNING: Should be hashed.
-        const [result] = await db.query('UPDATE users SET password = ? WHERE id = ?', [newPassword, userId]);
+        // 3. Hash and update to the new password
+        const hashedNewPassword = await bcrypt.hash(newPassword, saltRounds);
+        const [result] = await db.query('UPDATE users SET password = ? WHERE id = ?', [hashedNewPassword, userId]);
         
         if (result.affectedRows === 0) {
              return res.status(500).json({ message: 'فشل تحديث كلمة المرور.' });
