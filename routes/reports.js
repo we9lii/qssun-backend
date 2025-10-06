@@ -51,12 +51,14 @@ router.get('/reports', async (req, res) => {
     try {
         const query = `
             SELECT 
-                r.id, r.user_id, r.report_type, r.content, r.status, r.created_at,
+                r.id, r.user_id, r.report_type, r.content, r.status, r.created_at, r.assigned_team_id,
                 u.full_name as employee_name, u.department, u.username as employee_id_username,
-                b.name as branch_name
+                b.name as branch_name,
+                t.name as assigned_team_name
             FROM reports r
             LEFT JOIN users u ON r.user_id = u.id
             LEFT JOIN branches b ON r.branch_id = b.id
+            LEFT JOIN technical_teams t ON r.assigned_team_id = t.id
             ORDER BY r.created_at DESC
         `;
         const [rows] = await db.query(query);
@@ -71,6 +73,8 @@ router.get('/reports', async (req, res) => {
             date: row.created_at ? new Date(row.created_at).toISOString() : new Date().toISOString(),
             status: row.status || 'Pending',
             details: safeJsonParse(row.content, {}),
+            assignedTeamId: row.assigned_team_id?.toString() || undefined,
+            assignedTeamName: row.assigned_team_name || undefined,
         }));
 
         res.json(reports);
@@ -95,7 +99,7 @@ router.post('/reports', upload.any(), async (req, res) => {
             details.beforeImages = await Promise.all(beforeImages.map(file => uploadFileToCloudinary(file, employeeId, 'maintenance')));
             details.afterImages = await Promise.all(afterImages.map(file => uploadFileToCloudinary(file, employeeId, 'maintenance')));
         } else if (reportData.type === 'Sales') {
-            details.customers = details.customers || [];
+             details.customers = details.customers || [];
             for (let i = 0; i < details.customers.length; i++) {
                 const customerFiles = req.files.filter(f => f.fieldname === `sales_customer_${i}_files`);
                 const uploadedFiles = await Promise.all(customerFiles.map(file => uploadFileToCloudinary(file, employeeId, 'sales')));
@@ -128,6 +132,7 @@ router.post('/reports', upload.any(), async (req, res) => {
             report_type: reportData.type,
             content: JSON.stringify(details),
             status: reportData.status || 'Pending',
+            assigned_team_id: reportData.assignedTeamId || null,
         };
 
         const [result] = await db.query('INSERT INTO reports SET ?', newReportForDb);
@@ -194,6 +199,7 @@ router.put('/reports/:id', upload.any(), async (req, res) => {
         const dbPayload = {
             content: JSON.stringify(details), // The content IS the fully updated details object.
             status: reportData.status,
+            assigned_team_id: reportData.assignedTeamId || null,
         };
         
         await db.query('UPDATE reports SET ? WHERE id = ?', [dbPayload, id]);
@@ -201,12 +207,14 @@ router.put('/reports/:id', upload.any(), async (req, res) => {
         // Fetch and return the full updated report from DB to ensure data integrity.
         const query = `
             SELECT 
-                r.id, r.user_id, r.report_type, r.content, r.status, r.created_at,
+                r.id, r.user_id, r.report_type, r.content, r.status, r.created_at, r.assigned_team_id,
                 u.full_name as employee_name, u.department, u.username as employee_id_username,
-                b.name as branch_name
+                b.name as branch_name,
+                t.name as assigned_team_name
             FROM reports r
             LEFT JOIN users u ON r.user_id = u.id
             LEFT JOIN branches b ON r.branch_id = b.id
+            LEFT JOIN technical_teams t ON r.assigned_team_id = t.id
             WHERE r.id = ?
         `;
         const [rows] = await db.query(query, [id]);
@@ -221,6 +229,8 @@ router.put('/reports/:id', upload.any(), async (req, res) => {
             date: new Date(row.created_at).toISOString(),
             status: row.status,
             details: safeJsonParse(row.content, {}),
+            assignedTeamId: row.assigned_team_id?.toString() || undefined,
+            assignedTeamName: row.assigned_team_name || undefined,
         };
 
         res.json(updatedReportForFrontend);
