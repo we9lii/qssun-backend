@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db.js');
 const bcrypt = require('bcrypt');
+const saltRounds = 10; // Define salt rounds for consistency
 
 // POST /api/login
 router.post('/login', async (req, res) => {
@@ -21,8 +22,32 @@ router.post('/login', async (req, res) => {
         
         const user = userRows[0];
 
-        // 2. Check the password using bcrypt
-        const isPasswordCorrect = await bcrypt.compare(password, user.password);
+        // 2. Intelligent password check to handle both plain text (old) and hashed (new) passwords
+        let isPasswordCorrect = false;
+
+        // Check if the stored password from the DB looks like a bcrypt hash.
+        if (user.password && (user.password.startsWith('$2a$') || user.password.startsWith('$2b$'))) {
+            // If it is a hash, compare it securely.
+            isPasswordCorrect = await bcrypt.compare(password, user.password);
+        } else {
+            // If it is not a hash, it's likely a plain-text password from before the update.
+            // Compare it directly.
+            isPasswordCorrect = (password === user.password);
+            
+            // IMPORTANT: If the plain-text password is correct, we upgrade it to a hash "on-the-fly".
+            // This is a lazy migration strategy that secures users as they log in.
+            if (isPasswordCorrect) {
+                try {
+                    const hashedNewPassword = await bcrypt.hash(password, saltRounds);
+                    await db.query('UPDATE users SET password = ? WHERE id = ?', [hashedNewPassword, user.id]);
+                    console.log(`Password for user ${user.username} has been migrated to a secure hash.`);
+                } catch (hashError) {
+                    console.error(`Failed to migrate password for user ${user.username}:`, hashError);
+                    // We don't block the login, but we log the error. The user can still log in.
+                }
+            }
+        }
+
         if (!isPasswordCorrect) {
             return res.status(401).json({ message: 'Incorrect password.' });
         }
