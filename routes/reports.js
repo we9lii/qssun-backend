@@ -371,5 +371,41 @@ router.post('/reports/:id/complete-project', upload.array('completionFiles'), as
     }
 });
 
+// POST /api/reports/:id/finalize-handover - Employee finalizes and archives the project
+router.post('/reports/:id/finalize-handover', async (req, res) => {
+    const { id } = req.params;
+
+    try {
+        const [reportRows] = await db.query('SELECT content, project_workflow_status FROM reports WHERE id = ?', [id]);
+        if (reportRows.length === 0) return res.status(404).json({ message: 'Report not found.' });
+
+        const report = reportRows[0];
+        if (report.project_workflow_status !== 'Completed') {
+            return res.status(400).json({ message: 'Project is not yet completed by the technical team.' });
+        }
+
+        const details = safeJsonParse(report.content, {});
+        const handoverIndex = details.updates.findIndex((u) => u.id === 'deliveryHandover');
+        if (handoverIndex > -1) {
+            details.updates[handoverIndex].completed = true;
+            details.updates[handoverIndex].timestamp = new Date().toISOString();
+        }
+
+        await db.query('UPDATE reports SET content = ?, project_workflow_status = ?, status = ? WHERE id = ?', [
+            JSON.stringify(details),
+            'Archived',
+            'Approved', // Final status update for the report
+            id
+        ]);
+        
+        const [rows] = await db.query(`${fullReportQuery} WHERE r.id = ?`, [id]);
+        res.json(mapReportForFrontend(rows[0]));
+
+    } catch (error) {
+        console.error('Error finalizing project handover:', error);
+        res.status(500).json({ message: 'An internal server error occurred.' });
+    }
+});
+
 
 module.exports = router;
