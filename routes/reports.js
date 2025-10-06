@@ -51,7 +51,7 @@ router.get('/reports', async (req, res) => {
     try {
         const query = `
             SELECT 
-                r.id, r.user_id, r.report_type, r.content, r.status, r.created_at, r.assigned_team_id,
+                r.id, r.user_id, r.report_type, r.content, r.status, r.created_at, r.assigned_team_id, r.project_workflow_status,
                 u.full_name as employee_name, u.department, u.username as employee_id_username,
                 b.name as branch_name,
                 t.name as assigned_team_name
@@ -75,6 +75,7 @@ router.get('/reports', async (req, res) => {
             details: safeJsonParse(row.content, {}),
             assignedTeamId: row.assigned_team_id?.toString() || undefined,
             assignedTeamName: row.assigned_team_name || undefined,
+            projectWorkflowStatus: row.project_workflow_status || 'Draft',
         }));
 
         res.json(reports);
@@ -133,6 +134,7 @@ router.post('/reports', upload.any(), async (req, res) => {
             content: JSON.stringify(details),
             status: reportData.status || 'Pending',
             assigned_team_id: reportData.assignedTeamId || null,
+            project_workflow_status: reportData.projectWorkflowStatus || 'Draft',
         };
 
         const [result] = await db.query('INSERT INTO reports SET ?', newReportForDb);
@@ -200,6 +202,7 @@ router.put('/reports/:id', upload.any(), async (req, res) => {
             content: JSON.stringify(details), // The content IS the fully updated details object.
             status: reportData.status,
             assigned_team_id: reportData.assignedTeamId || null,
+            project_workflow_status: reportData.projectWorkflowStatus,
         };
         
         await db.query('UPDATE reports SET ? WHERE id = ?', [dbPayload, id]);
@@ -207,7 +210,7 @@ router.put('/reports/:id', upload.any(), async (req, res) => {
         // Fetch and return the full updated report from DB to ensure data integrity.
         const query = `
             SELECT 
-                r.id, r.user_id, r.report_type, r.content, r.status, r.created_at, r.assigned_team_id,
+                r.id, r.user_id, r.report_type, r.content, r.status, r.created_at, r.assigned_team_id, r.project_workflow_status,
                 u.full_name as employee_name, u.department, u.username as employee_id_username,
                 b.name as branch_name,
                 t.name as assigned_team_name
@@ -231,6 +234,7 @@ router.put('/reports/:id', upload.any(), async (req, res) => {
             details: safeJsonParse(row.content, {}),
             assignedTeamId: row.assigned_team_id?.toString() || undefined,
             assignedTeamName: row.assigned_team_name || undefined,
+            projectWorkflowStatus: row.project_workflow_status || 'Draft',
         };
 
         res.json(updatedReportForFrontend);
@@ -255,5 +259,66 @@ router.delete('/reports/:id', async (req, res) => {
         res.status(500).json({ message: 'An internal server error occurred.' });
     }
 });
+
+// POST /api/reports/:id/accept-team - Team lead accepts a project
+router.post('/reports/:id/accept-team', async (req, res) => {
+    const { id } = req.params;
+    // Note: In a real app, user ID would come from req.user (set by auth middleware)
+    // For now, we trust the frontend logic which only shows the button to the team lead.
+
+    try {
+        const [reportRows] = await db.query('SELECT project_workflow_status FROM reports WHERE id = ?', [id]);
+        if (reportRows.length === 0) {
+            return res.status(404).json({ message: 'Report not found.' });
+        }
+
+        const report = reportRows[0];
+        if (report.project_workflow_status !== 'PendingTeamAcceptance') {
+            return res.status(400).json({ message: 'Project is not awaiting team acceptance.' });
+        }
+
+        await db.query('UPDATE reports SET project_workflow_status = ? WHERE id = ?', ['InProgress', id]);
+        
+        // Fetch and return the full updated report to sync frontend state
+        const query = `
+            SELECT 
+                r.id, r.user_id, r.report_type, r.content, r.status, r.created_at, r.assigned_team_id, r.project_workflow_status,
+                u.full_name as employee_name, u.department, u.username as employee_id_username,
+                b.name as branch_name,
+                t.name as assigned_team_name
+            FROM reports r
+            LEFT JOIN users u ON r.user_id = u.id
+            LEFT JOIN branches b ON r.branch_id = b.id
+            LEFT JOIN technical_teams t ON r.assigned_team_id = t.id
+            WHERE r.id = ?
+        `;
+        const [rows] = await db.query(query, [id]);
+        if (rows.length === 0) {
+            return res.status(404).json({ message: 'Updated report not found.' });
+        }
+        const row = rows[0];
+        const updatedReportForFrontend = {
+            id: row.id.toString(),
+            employeeId: row.employee_id_username,
+            employeeName: row.employee_name,
+            branch: row.branch_name,
+            department: row.department,
+            type: row.report_type,
+            date: new Date(row.created_at).toISOString(),
+            status: row.status,
+            details: safeJsonParse(row.content, {}),
+            assignedTeamId: row.assigned_team_id?.toString() || undefined,
+            assignedTeamName: row.assigned_team_name || undefined,
+            projectWorkflowStatus: row.project_workflow_status || 'Draft'
+        };
+
+        res.json(updatedReportForFrontend);
+
+    } catch (error) {
+        console.error('Error accepting project:', error);
+        res.status(500).json({ message: 'An internal server error occurred.' });
+    }
+});
+
 
 module.exports = router;
