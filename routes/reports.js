@@ -320,5 +320,80 @@ router.post('/reports/:id/accept-team', async (req, res) => {
     }
 });
 
+// POST /api/reports/:id/confirm-concrete - Team lead confirms concrete works
+router.post('/reports/:id/confirm-concrete', upload.array('concreteFiles'), async (req, res) => {
+    const { id } = req.params;
+    const { comment } = req.body;
+    const files = req.files;
+
+    try {
+        const [reportRows] = await db.query('SELECT content, user_id FROM reports WHERE id = ?', [id]);
+        if (reportRows.length === 0) {
+            return res.status(404).json({ message: 'Report not found.' });
+        }
+        
+        const report = reportRows[0];
+        const [userRows] = await db.query('SELECT username FROM users WHERE id = ?', [report.user_id]);
+        const employeeId = userRows[0]?.username || 'unknown';
+
+        const uploadedFiles = await Promise.all(
+            files.map(file => uploadFileToCloudinary(file, employeeId, `projects/${id}/concrete`))
+        );
+
+        const newFileObjects = uploadedFiles.map(uf => ({ id: `concrete-${Date.now()}-${Math.random()}`, ...uf }));
+
+        const details = safeJsonParse(report.content, {});
+        const concreteUpdateIndex = details.updates.findIndex((u) => u.id === 'concreteWorks');
+
+        if (concreteUpdateIndex > -1) {
+            details.updates[concreteUpdateIndex].completed = true;
+            details.updates[concreteUpdateIndex].timestamp = new Date().toISOString();
+            details.updates[concreteUpdateIndex].files = [...(details.updates[concreteUpdateIndex].files || []), ...newFileObjects];
+        }
+
+        await db.query('UPDATE reports SET content = ?, project_workflow_status = ? WHERE id = ?', [
+            JSON.stringify(details),
+            'ConcreteWorksDone',
+            id
+        ]);
+        
+        // Fetch and return the full updated report
+        const query = `
+            SELECT 
+                r.id, r.user_id, r.report_type, r.content, r.status, r.created_at, r.assigned_team_id, r.project_workflow_status,
+                u.full_name as employee_name, u.department, u.username as employee_id_username,
+                b.name as branch_name,
+                t.name as assigned_team_name
+            FROM reports r
+            LEFT JOIN users u ON r.user_id = u.id
+            LEFT JOIN branches b ON r.branch_id = b.id
+            LEFT JOIN technical_teams t ON r.assigned_team_id = t.id
+            WHERE r.id = ?
+        `;
+        const [rows] = await db.query(query, [id]);
+        const row = rows[0];
+        const updatedReportForFrontend = {
+            id: row.id.toString(),
+            employeeId: row.employee_id_username,
+            employeeName: row.employee_name,
+            branch: row.branch_name,
+            department: row.department,
+            type: row.report_type,
+            date: new Date(row.created_at).toISOString(),
+            status: row.status,
+            details: safeJsonParse(row.content, {}),
+            assignedTeamId: row.assigned_team_id?.toString() || undefined,
+            assignedTeamName: row.assigned_team_name || undefined,
+            projectWorkflowStatus: row.project_workflow_status || 'Draft'
+        };
+
+        res.json(updatedReportForFrontend);
+
+    } catch (error) {
+        console.error('Error confirming concrete works:', error);
+        res.status(500).json({ message: 'An internal server error occurred.' });
+    }
+});
+
 
 module.exports = router;
