@@ -326,5 +326,50 @@ router.post('/reports/:id/confirm-second-payment', async (req, res) => {
     }
 });
 
+// POST /api/reports/:id/complete-project - Team lead completes the project
+router.post('/reports/:id/complete-project', upload.array('completionFiles'), async (req, res) => {
+    const { id } = req.params;
+    const { comment } = req.body;
+    const files = req.files;
+
+    try {
+        const [reportRows] = await db.query('SELECT content, user_id, project_workflow_status FROM reports WHERE id = ?', [id]);
+        if (reportRows.length === 0) return res.status(404).json({ message: 'Report not found.' });
+        if (reportRows[0].project_workflow_status !== 'FinishingWorks') {
+            return res.status(400).json({ message: 'Project is not in the finishing stage.' });
+        }
+        
+        const [userRows] = await db.query('SELECT username FROM users WHERE id = ?', [reportRows[0].user_id]);
+        const employeeId = userRows[0]?.username || 'unknown';
+
+        const uploadedFiles = await Promise.all(
+            files.map(file => uploadFileToCloudinary(file, employeeId, `projects/${id}/completion`))
+        );
+        const newFileObjects = uploadedFiles.map(uf => ({ id: `completion-${Date.now()}-${Math.random()}`, ...uf }));
+
+        const details = safeJsonParse(reportRows[0].content, {});
+        const deliveryUpdateIndex = details.updates.findIndex((u) => u.id === 'deliveryHandover');
+
+        if (deliveryUpdateIndex > -1) {
+            details.updates[deliveryUpdateIndex].completed = true;
+            details.updates[deliveryUpdateIndex].timestamp = new Date().toISOString();
+            details.updates[deliveryUpdateIndex].files = [...(details.updates[deliveryUpdateIndex].files || []), ...newFileObjects];
+        }
+
+        await db.query('UPDATE reports SET content = ?, project_workflow_status = ? WHERE id = ?', [
+            JSON.stringify(details),
+            'Completed',
+            id
+        ]);
+        
+        const [rows] = await db.query(`${fullReportQuery} WHERE r.id = ?`, [id]);
+        res.json(mapReportForFrontend(rows[0]));
+
+    } catch (error) {
+        console.error('Error completing project:', error);
+        res.status(500).json({ message: 'An internal server error occurred.' });
+    }
+});
+
 
 module.exports = router;
