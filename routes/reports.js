@@ -43,14 +43,12 @@ const safeJsonParse = (jsonString, defaultValue = {}) => {
 // Full report select query for reuse
 const fullReportQuery = `
     SELECT 
-        r.id, r.user_id, r.report_type, r.content, r.status, r.created_at, r.assigned_team_id, r.project_workflow_status,
+        r.id, r.user_id, r.report_type, r.content, r.status, r.created_at, r.evaluation, r.modifications,
         u.full_name as employee_name, u.department, u.username as employee_id_username,
-        b.name as branch_name,
-        t.name as assigned_team_name
+        b.name as branch_name
     FROM reports r
     LEFT JOIN users u ON r.user_id = u.id
     LEFT JOIN branches b ON r.branch_id = b.id
-    LEFT JOIN technical_teams t ON r.assigned_team_id = t.id
 `;
 
 const formatReportForFrontend = (reportRow) => {
@@ -66,9 +64,6 @@ const formatReportForFrontend = (reportRow) => {
         details: safeJsonParse(reportRow.content, {}),
         evaluation: safeJsonParse(reportRow.evaluation, undefined),
         modifications: safeJsonParse(reportRow.modifications, []),
-        assignedTeamId: reportRow.assigned_team_id ? reportRow.assigned_team_id.toString() : undefined,
-        assignedTeamName: reportRow.assigned_team_name,
-        projectWorkflowStatus: reportRow.project_workflow_status,
     };
 };
 
@@ -117,13 +112,6 @@ router.post('/reports', upload.any(), async (req, res) => {
                         details.customers[i].files = await Promise.all(customerFiles.map(file => uploadFileToCloudinary(file, employeeId, 'sales')));
                     }
                 }
-            } else if (reportData.type === 'Project') {
-                for (let i = 0; i < details.updates.length; i++) {
-                    const updateFiles = req.files.filter(f => f.fieldname === `project_update_${i}_files`);
-                     if (updateFiles.length > 0) {
-                        details.updates[i].files = await Promise.all(updateFiles.map(file => uploadFileToCloudinary(file, employeeId, 'projects')));
-                    }
-                }
             }
         }
 
@@ -133,8 +121,6 @@ router.post('/reports', upload.any(), async (req, res) => {
             report_type: reportData.type,
             content: JSON.stringify(details),
             status: reportData.status,
-            assigned_team_id: reportData.assignedTeamId || null,
-            project_workflow_status: reportData.projectWorkflowStatus || null,
         };
 
         const [result] = await db.query('INSERT INTO reports SET ?', newReport);
@@ -163,18 +149,6 @@ router.put('/reports/:id', upload.any(), async (req, res) => {
 
         // Handle file uploads for updates
          if (req.files && req.files.length > 0) {
-            // Project file updates
-            const projectUpdateFiles = req.files.filter(f => f.fieldname.startsWith('project_update_'));
-            if (projectUpdateFiles.length > 0 && details.updates) {
-                for (const file of projectUpdateFiles) {
-                    const uIndex = parseInt(file.fieldname.split('_')[2]);
-                    if (details.updates[uIndex]) {
-                        if (!details.updates[uIndex].files) details.updates[uIndex].files = [];
-                        const uploadedFile = await uploadFileToCloudinary(file, employeeId, 'projects');
-                        details.updates[uIndex].files.push(uploadedFile);
-                    }
-                }
-            }
             // Sales file updates
             const salesFiles = req.files.filter(f => f.fieldname.startsWith('sales_customer_'));
             if (salesFiles.length > 0 && details.customers) {
@@ -201,8 +175,6 @@ router.put('/reports/:id', upload.any(), async (req, res) => {
             status: reportData.status,
             modifications: JSON.stringify(reportData.modifications || []),
             evaluation: JSON.stringify(reportData.evaluation || null),
-            assigned_team_id: reportData.assignedTeamId || null,
-            project_workflow_status: reportData.projectWorkflowStatus || null,
         };
 
         const [result] = await db.query('UPDATE reports SET ? WHERE id = ?', [updatedReport, id]);
@@ -235,92 +207,6 @@ router.delete('/reports/:id', async (req, res) => {
         console.error(`Error in DELETE /api/reports/${id}:`, error);
         res.status(500).json({ message: 'An internal server error occurred while deleting the report.' });
     }
-});
-
-
-// --- Project Workflow Endpoints ---
-
-const updateProjectWorkflow = async (res, reportId, newStatus, updateData = {}) => {
-    try {
-        const setClauses = ['project_workflow_status = ?'];
-        const values = [newStatus];
-
-        if (updateData.content) {
-            setClauses.push('content = ?');
-            values.push(updateData.content);
-        }
-
-        values.push(reportId);
-
-        const sql = `UPDATE reports SET ${setClauses.join(', ')} WHERE id = ?`;
-
-        const [result] = await db.query(sql, values);
-        if (result.affectedRows === 0) {
-            return res.status(404).json({ message: 'Project report not found.' });
-        }
-        const [rows] = await db.query(`${fullReportQuery} WHERE r.id = ?`, [reportId]);
-        res.json(formatReportForFrontend(rows[0]));
-    } catch (error) {
-        console.error(`Error in updateProjectWorkflow for report ${reportId} to status ${newStatus}:`, error);
-        res.status(500).json({ message: 'An internal server error occurred during project workflow update.' });
-    }
-};
-
-router.post('/reports/:id/accept-team', async (req, res) => {
-    await updateProjectWorkflow(res, req.params.id, 'InProgress');
-});
-
-router.post('/reports/:id/confirm-second-payment', async (req, res) => {
-    await updateProjectWorkflow(res, req.params.id, 'FinishingWorks');
-});
-
-router.post('/reports/:id/finalize-handover', async (req, res) => {
-    await updateProjectWorkflow(res, req.params.id, 'Archived');
-});
-
-// Endpoints with file uploads and comments
-const workflowUpdateWithFiles = async (req, res, newStatus, updateId, fileFolder) => {
-    const { id } = req.params;
-    const { comment } = req.body;
-
-    try {
-        const [reportRows] = await db.query('SELECT r.content, u.username as employee_id FROM reports r LEFT JOIN users u on r.user_id = u.id WHERE r.id = ?', [id]);
-        if (reportRows.length === 0) return res.status(404).json({ message: 'Report not found.' });
-        
-        const content = safeJsonParse(reportRows[0].content);
-        const employeeId = reportRows[0].employee_id;
-
-        const updateIndex = content.updates.findIndex(u => u.id === updateId);
-        if (updateIndex === -1) return res.status(400).json({ message: `Update step '${updateId}' not found.` });
-
-        const uploadedFiles = await Promise.all(
-            req.files.map(file => uploadFileToCloudinary(file, employeeId, fileFolder))
-        );
-
-        content.updates[updateIndex] = {
-            ...content.updates[updateIndex],
-            completed: true,
-            timestamp: new Date().toISOString(),
-            comment: comment || '',
-            files: uploadedFiles,
-        };
-
-        await updateProjectWorkflow(res, id, newStatus, { content: JSON.stringify(content) });
-
-    } catch (error) {
-        console.error(`Error in workflowUpdateWithFiles for report ${id}, status ${newStatus}:`, error);
-        console.error('Received comment:', req.body.comment);
-        console.error('Received files:', req.files ? req.files.map(f => f.originalname) : 'No files');
-        res.status(500).json({ message: 'An internal server error occurred during project file update.' });
-    }
-};
-
-router.post('/reports/:id/confirm-concrete', upload.array('concreteFiles'), async (req, res) => {
-    await workflowUpdateWithFiles(req, res, 'ConcreteWorksDone', 'concreteWorks', 'concrete');
-});
-
-router.post('/reports/:id/complete-project', upload.array('completionFiles'), async (req, res) => {
-     await workflowUpdateWithFiles(req, res, 'Completed', 'deliveryHandover', 'completion');
 });
 
 
