@@ -215,8 +215,79 @@ router.put('/reports/:id', upload.any(), async (req, res) => {
         console.error(`Error in PUT /api/reports/${id}:`, error);
         console.error('Received reportData:', req.body.reportData);
         console.error('Received files:', req.files ? req.files.map(f => f.originalname) : 'No files');
-        // Return the specific error message to the frontend
         res.status(500).json({ message: error.message || 'An internal server error occurred while updating the report.' });
+    }
+});
+
+// POST /api/reports/:id/confirm-stage - A dedicated endpoint for project stage updates
+router.post('/reports/:id/confirm-stage', upload.array('files'), async (req, res) => {
+    const { id } = req.params;
+    const { stageId, comment, employeeId } = req.body;
+
+    if (!stageId || !employeeId) {
+        return res.status(400).json({ message: 'stageId and employeeId are required.' });
+    }
+
+    try {
+        // 1. Fetch the current report
+        const [reportRows] = await db.query('SELECT * FROM reports WHERE id = ?', [id]);
+        if (reportRows.length === 0) {
+            return res.status(404).json({ message: 'Project report not found.' });
+        }
+        const report = reportRows[0];
+        const details = safeJsonParse(report.content);
+
+        if (report.report_type !== 'Project' || !details.updates) {
+            return res.status(400).json({ message: 'This action is only for Project reports.' });
+        }
+
+        const stageIndex = details.updates.findIndex(u => u.id === stageId);
+        if (stageIndex === -1) {
+            return res.status(400).json({ message: `Stage with id '${stageId}' not found in project workflow.` });
+        }
+        
+        // 2. Upload files to Cloudinary
+        let uploadedFiles = [];
+        if (req.files && req.files.length > 0) {
+            uploadedFiles = await Promise.all(req.files.map(file => uploadFileToCloudinary(file, employeeId, 'projects')));
+        }
+        
+        // 3. Update the stage in the details object
+        const newUpdates = [...details.updates];
+        const currentStageFiles = newUpdates[stageIndex].files || [];
+        newUpdates[stageIndex] = {
+            ...newUpdates[stageIndex],
+            completed: true,
+            timestamp: new Date().toISOString(),
+            comment: comment || newUpdates[stageIndex].comment,
+            files: [...currentStageFiles, ...uploadedFiles],
+        };
+        details.updates = newUpdates;
+
+        // 4. Determine the new overall project workflow status
+        let newWorkflowStatus = report.project_workflow_status;
+        if (stageId === 'concreteWorks') {
+            newWorkflowStatus = 'ConcreteWorksDone';
+        } else if (stageId === 'deliveryHandover') {
+            newWorkflowStatus = 'Completed';
+        }
+        
+        // 5. Update the report in the database
+        const updatedReportPayload = {
+            content: JSON.stringify(details),
+            project_workflow_status: newWorkflowStatus,
+            ...(newWorkflowStatus === 'Completed' && { status: 'Approved' }),
+        };
+        
+        await db.query('UPDATE reports SET ? WHERE id = ?', [updatedReportPayload, id]);
+
+        // 6. Fetch the full, formatted report to send back
+        const [rows] = await db.query(`${fullReportQuery} WHERE r.id = ?`, [id]);
+        res.status(200).json(formatReportForFrontend(rows[0]));
+
+    } catch (error) {
+        console.error(`Error in POST /api/reports/${id}/confirm-stage:`, error);
+        res.status(500).json({ message: error.message || 'An internal server error occurred while updating the project stage.' });
     }
 });
 
