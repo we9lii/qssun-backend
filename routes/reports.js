@@ -44,6 +44,7 @@ const safeJsonParse = (jsonString, defaultValue = {}) => {
 const fullReportQuery = `
     SELECT 
         r.id, r.user_id, r.report_type, r.content, r.status, r.created_at, r.evaluation, r.modifications,
+        r.assigned_team_id, r.project_workflow_status,
         u.full_name as employee_name, u.department, u.username as employee_id_username,
         b.name as branch_name
     FROM reports r
@@ -64,6 +65,8 @@ const formatReportForFrontend = (reportRow) => {
         details: safeJsonParse(reportRow.content, {}),
         evaluation: safeJsonParse(reportRow.evaluation, undefined),
         modifications: safeJsonParse(reportRow.modifications, []),
+        assignedTeamId: reportRow.assigned_team_id ? reportRow.assigned_team_id.toString() : undefined,
+        projectWorkflowStatus: reportRow.project_workflow_status || undefined,
     };
 };
 
@@ -112,6 +115,15 @@ router.post('/reports', upload.any(), async (req, res) => {
                         details.customers[i].files = await Promise.all(customerFiles.map(file => uploadFileToCloudinary(file, employeeId, 'sales')));
                     }
                 }
+            } else if (reportData.type === 'Project') {
+                for (let i = 0; i < details.updates.length; i++) {
+                    const updateFiles = req.files.filter(f => f.fieldname === `project_update_${i}_files`);
+                    if (updateFiles.length > 0) {
+                        if (!details.updates[i].files) details.updates[i].files = [];
+                        const uploadedFiles = await Promise.all(updateFiles.map(file => uploadFileToCloudinary(file, employeeId, 'projects')));
+                        details.updates[i].files.push(...uploadedFiles);
+                    }
+                }
             }
         }
 
@@ -121,6 +133,8 @@ router.post('/reports', upload.any(), async (req, res) => {
             report_type: reportData.type,
             content: JSON.stringify(details),
             status: reportData.status,
+            assigned_team_id: reportData.assignedTeamId || null,
+            project_workflow_status: reportData.projectWorkflowStatus || null,
         };
 
         const [result] = await db.query('INSERT INTO reports SET ?', newReport);
@@ -150,14 +164,24 @@ router.put('/reports/:id', upload.any(), async (req, res) => {
         // Handle file uploads for updates
          if (req.files && req.files.length > 0) {
             // Sales file updates
-            const salesFiles = req.files.filter(f => f.fieldname.startsWith('sales_customer_'));
-            if (salesFiles.length > 0 && details.customers) {
-                for (const file of salesFiles) {
+            if (reportData.type === 'Sales' && details.customers) {
+                for (const file of req.files.filter(f => f.fieldname.startsWith('sales_customer_'))) {
                     const cIndex = parseInt(file.fieldname.split('_')[2]);
                     if (details.customers[cIndex]) {
                         if (!details.customers[cIndex].files) details.customers[cIndex].files = [];
                         const uploadedFile = await uploadFileToCloudinary(file, employeeId, 'sales');
                         details.customers[cIndex].files.push(uploadedFile);
+                    }
+                }
+            }
+            // Project file updates
+            if (reportData.type === 'Project' && details.updates) {
+                for (const file of req.files.filter(f => f.fieldname.startsWith('project_update_'))) {
+                    const uIndex = parseInt(file.fieldname.split('_')[2]);
+                    if (details.updates[uIndex]) {
+                        if (!details.updates[uIndex].files) details.updates[uIndex].files = [];
+                        const uploadedFile = await uploadFileToCloudinary(file, employeeId, 'projects');
+                        details.updates[uIndex].files.push(uploadedFile);
                     }
                 }
             }
@@ -175,6 +199,8 @@ router.put('/reports/:id', upload.any(), async (req, res) => {
             status: reportData.status,
             modifications: JSON.stringify(reportData.modifications || []),
             evaluation: JSON.stringify(reportData.evaluation || null),
+            assigned_team_id: reportData.assignedTeamId || null,
+            project_workflow_status: reportData.projectWorkflowStatus || null,
         };
 
         const [result] = await db.query('UPDATE reports SET ? WHERE id = ?', [updatedReport, id]);
