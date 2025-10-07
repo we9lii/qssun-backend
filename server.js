@@ -13,7 +13,10 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-app.use(express.json());
+// Increase the body limit to handle large file uploads within JSON payloads
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
 
 // --- Health check endpoint (My addition for diagnostics) ---
 app.get('/api/health', async (req, res) => {
