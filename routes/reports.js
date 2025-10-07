@@ -268,7 +268,6 @@ router.post('/reports/:id/confirm-concrete', upload.array('concreteFiles'), asyn
         const newFileObjects = uploadedFiles.map(uf => ({ id: `concrete-${Date.now()}-${Math.random()}`, ...uf }));
 
         const details = safeJsonParse(reportRows[0].content, {});
-        // Defensive coding: Ensure 'updates' array exists.
         details.updates = details.updates || [];
         const concreteUpdateIndex = details.updates.findIndex((u) => u.id === 'concreteWorks');
 
@@ -276,14 +275,15 @@ router.post('/reports/:id/confirm-concrete', upload.array('concreteFiles'), asyn
             details.updates[concreteUpdateIndex].completed = true;
             details.updates[concreteUpdateIndex].timestamp = new Date().toISOString();
             details.updates[concreteUpdateIndex].files = [...(details.updates[concreteUpdateIndex].files || []), ...newFileObjects];
+            details.updates[concreteUpdateIndex].comment = comment;
         } else {
-            // If the step doesn't exist, create it.
             details.updates.push({
                 id: 'concreteWorks',
                 label: 'إنتهاء اعمال الخرسانة',
                 completed: true,
                 timestamp: new Date().toISOString(),
-                files: newFileObjects
+                files: newFileObjects,
+                comment: comment
             });
         }
 
@@ -368,13 +368,15 @@ router.post('/reports/:id/complete-project', upload.array('completionFiles'), as
             details.updates[deliveryUpdateIndex].completed = true;
             details.updates[deliveryUpdateIndex].timestamp = new Date().toISOString();
             details.updates[deliveryUpdateIndex].files = [...(details.updates[deliveryUpdateIndex].files || []), ...newFileObjects];
+            details.updates[deliveryUpdateIndex].comment = comment;
         } else {
             details.updates.push({
                 id: 'deliveryHandover',
                 label: 'ارسال محضر تسليم الأعمال',
                 completed: true,
                 timestamp: new Date().toISOString(),
-                files: newFileObjects
+                files: newFileObjects,
+                comment: comment,
             });
         }
 
