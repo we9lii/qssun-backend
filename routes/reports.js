@@ -275,7 +275,7 @@ router.post('/reports/:id/confirm-concrete', upload.array('concreteFiles'), asyn
             details.updates[concreteUpdateIndex].completed = true;
             details.updates[concreteUpdateIndex].timestamp = new Date().toISOString();
             details.updates[concreteUpdateIndex].files = [...(details.updates[concreteUpdateIndex].files || []), ...newFileObjects];
-            details.updates[concreteUpdateIndex].comment = comment;
+            details.updates[concreteUpdateIndex].comment = comment; // Save the comment
         } else {
             details.updates.push({
                 id: 'concreteWorks',
@@ -368,7 +368,7 @@ router.post('/reports/:id/complete-project', upload.array('completionFiles'), as
             details.updates[deliveryUpdateIndex].completed = true;
             details.updates[deliveryUpdateIndex].timestamp = new Date().toISOString();
             details.updates[deliveryUpdateIndex].files = [...(details.updates[deliveryUpdateIndex].files || []), ...newFileObjects];
-            details.updates[deliveryUpdateIndex].comment = comment;
+            details.updates[deliveryUpdateIndex].comment = comment; // Save the comment
         } else {
             details.updates.push({
                 id: 'deliveryHandover',
