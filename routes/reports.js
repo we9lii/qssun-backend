@@ -272,7 +272,11 @@ router.post('/reports/:id/confirm-concrete', upload.array('concreteFiles'), asyn
         const newFileObjects = uploadedFiles.map(uf => ({ id: `concrete-${Date.now()}-${Math.random()}`, ...uf }));
 
         const details = safeJsonParse(reportRows[0].content, {});
-        details.updates = details.updates || [];
+        
+        if (!Array.isArray(details.updates)) { // Robustness check
+            details.updates = [];
+        }
+
         const concreteUpdateIndex = details.updates.findIndex((u) => u.id === 'concreteWorks');
 
         if (concreteUpdateIndex > -1) {
@@ -321,7 +325,11 @@ router.post('/reports/:id/confirm-second-payment', async (req, res) => {
         }
 
         const details = safeJsonParse(report.content, {});
-        details.updates = details.updates || [];
+        
+        if (!Array.isArray(details.updates)) { // Robustness check
+            details.updates = [];
+        }
+
         const secondPaymentIndex = details.updates.findIndex((u) => u.id === 'secondPayment');
         if (secondPaymentIndex > -1) {
             details.updates[secondPaymentIndex].completed = true;
@@ -365,7 +373,11 @@ router.post('/reports/:id/complete-project', upload.array('completionFiles'), as
         const newFileObjects = uploadedFiles.map(uf => ({ id: `completion-${Date.now()}-${Math.random()}`, ...uf }));
 
         const details = safeJsonParse(reportRows[0].content, {});
-        details.updates = details.updates || [];
+        
+        if (!Array.isArray(details.updates)) { // Robustness check
+            details.updates = [];
+        }
+
         const deliveryUpdateIndex = details.updates.findIndex((u) => u.id === 'deliveryHandover');
 
         if (deliveryUpdateIndex > -1) {
@@ -413,7 +425,11 @@ router.post('/reports/:id/finalize-handover', async (req, res) => {
         }
 
         const details = safeJsonParse(report.content, {});
-        details.updates = details.updates || [];
+        
+        if (!Array.isArray(details.updates)) { // Robustness check
+            details.updates = [];
+        }
+        
         const handoverIndex = details.updates.findIndex((u) => u.id === 'deliveryHandover');
         if (handoverIndex > -1) {
             details.updates[handoverIndex].completed = true;
