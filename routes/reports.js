@@ -21,7 +21,7 @@ const uploadFileToCloudinary = (file, employeeId, folder) => {
             },
             (error, result) => {
                 if (error) return reject(error);
-                if (result) resolve({ url: result.secure_url, fileName: file.originalname });
+                if (result) resolve({ url: result.secure_url, fileName: file.originalname, id: result.public_id });
                 else reject(new Error("Cloudinary upload failed without an error object."));
             }
         );
@@ -49,7 +49,7 @@ const fullReportQuery = `
         b.name as branch_name
     FROM reports r
     LEFT JOIN users u ON r.user_id = u.id
-    LEFT JOIN branches b ON r.branch_id = b.id
+    LEFT JOIN branches b ON u.branch_id = r.branch_id
 `;
 
 const formatReportForFrontend = (reportRow) => {
