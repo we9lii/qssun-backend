@@ -215,7 +215,8 @@ router.put('/reports/:id', upload.any(), async (req, res) => {
         console.error(`Error in PUT /api/reports/${id}:`, error);
         console.error('Received reportData:', req.body.reportData);
         console.error('Received files:', req.files ? req.files.map(f => f.originalname) : 'No files');
-        res.status(500).json({ message: 'An internal server error occurred while updating the report.' });
+        // Return the specific error message to the frontend
+        res.status(500).json({ message: error.message || 'An internal server error occurred while updating the report.' });
     }
 });
 
