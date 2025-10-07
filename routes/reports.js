@@ -79,7 +79,7 @@ router.get('/reports', async (req, res) => {
         const reports = rows.map(formatReportForFrontend);
         res.json(reports);
     } catch (error) {
-        console.error('Error fetching reports:', error);
+        console.error('Error in GET /api/reports:', error);
         res.status(500).json({ message: 'An internal server error occurred while fetching reports.' });
     }
 });
@@ -143,8 +143,10 @@ router.post('/reports', upload.any(), async (req, res) => {
         res.status(201).json(formatReportForFrontend(rows[0]));
 
     } catch (error) {
-        console.error('Error creating report:', error);
-        res.status(500).json({ message: 'An internal server error occurred.' });
+        console.error('Error in POST /api/reports:', error);
+        console.error('Received reportData:', req.body.reportData);
+        console.error('Received files:', req.files ? req.files.map(f => f.originalname) : 'No files');
+        res.status(500).json({ message: 'An internal server error occurred while creating the report.' });
     }
 });
 
@@ -212,8 +214,10 @@ router.put('/reports/:id', upload.any(), async (req, res) => {
         res.json(formatReportForFrontend(rows[0]));
 
     } catch (error) {
-        console.error('Error updating report:', error);
-        res.status(500).json({ message: 'An internal server error occurred.' });
+        console.error(`Error in PUT /api/reports/${id}:`, error);
+        console.error('Received reportData:', req.body.reportData);
+        console.error('Received files:', req.files ? req.files.map(f => f.originalname) : 'No files');
+        res.status(500).json({ message: 'An internal server error occurred while updating the report.' });
     }
 });
 
@@ -228,8 +232,8 @@ router.delete('/reports/:id', async (req, res) => {
         }
         res.status(200).json({ message: 'Report deleted successfully.' });
     } catch (error) {
-        console.error('Error deleting report:', error);
-        res.status(500).json({ message: 'An internal server error occurred.' });
+        console.error(`Error in DELETE /api/reports/${id}:`, error);
+        res.status(500).json({ message: 'An internal server error occurred while deleting the report.' });
     }
 });
 
@@ -238,15 +242,27 @@ router.delete('/reports/:id', async (req, res) => {
 
 const updateProjectWorkflow = async (res, reportId, newStatus, updateData = {}) => {
     try {
-        const [result] = await db.query('UPDATE reports SET project_workflow_status = ?, ? WHERE id = ?', [newStatus, updateData, reportId]);
+        const setClauses = ['project_workflow_status = ?'];
+        const values = [newStatus];
+
+        if (updateData.content) {
+            setClauses.push('content = ?');
+            values.push(updateData.content);
+        }
+
+        values.push(reportId);
+
+        const sql = `UPDATE reports SET ${setClauses.join(', ')} WHERE id = ?`;
+
+        const [result] = await db.query(sql, values);
         if (result.affectedRows === 0) {
             return res.status(404).json({ message: 'Project report not found.' });
         }
         const [rows] = await db.query(`${fullReportQuery} WHERE r.id = ?`, [reportId]);
         res.json(formatReportForFrontend(rows[0]));
     } catch (error) {
-        console.error(`Error updating project status to ${newStatus}:`, error);
-        res.status(500).json({ message: 'An internal server error occurred.' });
+        console.error(`Error in updateProjectWorkflow for report ${reportId} to status ${newStatus}:`, error);
+        res.status(500).json({ message: 'An internal server error occurred during project workflow update.' });
     }
 };
 
@@ -292,8 +308,10 @@ const workflowUpdateWithFiles = async (req, res, newStatus, updateId, fileFolder
         await updateProjectWorkflow(res, id, newStatus, { content: JSON.stringify(content) });
 
     } catch (error) {
-        console.error(`Error in workflowUpdateWithFiles for status ${newStatus}:`, error);
-        res.status(500).json({ message: 'An internal server error occurred.' });
+        console.error(`Error in workflowUpdateWithFiles for report ${id}, status ${newStatus}:`, error);
+        console.error('Received comment:', req.body.comment);
+        console.error('Received files:', req.files ? req.files.map(f => f.originalname) : 'No files');
+        res.status(500).json({ message: 'An internal server error occurred during project file update.' });
     }
 };
 

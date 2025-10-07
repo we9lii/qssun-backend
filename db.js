@@ -31,4 +31,20 @@ if (process.env.DATABASE_URL) {
   console.log('Attempting connection using individual DB environment variables.');
 }
 
+// Attach a connection test function to the pool object.
+pool.testConnection = async () => {
+    let connection;
+    try {
+        connection = await pool.getConnection();
+        await connection.ping();
+        console.log('Database connection test successful.');
+        return { status: 'ok', message: 'Database connection successful.' };
+    } catch (error) {
+        console.error('Database connection test failed:', error);
+        return { status: 'error', message: 'Database connection failed.', error: error.message };
+    } finally {
+        if (connection) connection.release();
+    }
+};
+
 module.exports = pool;
