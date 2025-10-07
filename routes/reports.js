@@ -256,9 +256,13 @@ router.post('/reports/:id/confirm-concrete', upload.array('concreteFiles'), asyn
     const files = req.files;
 
     try {
-        const [reportRows] = await db.query('SELECT content, user_id FROM reports WHERE id = ?', [id]);
+        const [reportRows] = await db.query('SELECT content, user_id, project_workflow_status FROM reports WHERE id = ?', [id]);
         if (reportRows.length === 0) return res.status(404).json({ message: 'Report not found.' });
         
+        if (reportRows[0].project_workflow_status !== 'InProgress') {
+            return res.status(400).json({ message: 'Project is not in the correct stage to confirm concrete works.' });
+        }
+
         const [userRows] = await db.query('SELECT username FROM users WHERE id = ?', [reportRows[0].user_id]);
         const employeeId = userRows[0]?.username || 'unknown';
 
