@@ -285,6 +285,12 @@ router.post('/reports/:id/confirm-stage', upload.array('files'), async (req, res
                     updatedReportPayload.content = JSON.stringify(details);
                 }
                 break;
+
+            case 'workflowDocs':
+                details.workflowDocs = [...(details.workflowDocs || []), ...uploadedFiles];
+                updatedReportPayload.content = JSON.stringify(details);
+                // Status remains FinishingWorks, so no status update here.
+                break;
                 
             default:
                 return res.status(400).json({ message: `Stage action '${stageId}' is not recognized.` });
