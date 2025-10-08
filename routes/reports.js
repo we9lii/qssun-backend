@@ -271,7 +271,7 @@ router.post('/reports/:id/confirm-stage', upload.array('files'), async (req, res
                     timestamp: new Date().toISOString(),
                 };
                 updatedReportPayload.content = JSON.stringify(details);
-                updatedReportPayload.project_workflow_status = 'Completed';
+                updatedReportPayload.project_workflow_status = 'TechnicallyCompleted';
                 break;
             
             case 'deliveryHandover_signed':
