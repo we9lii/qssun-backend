@@ -265,11 +265,14 @@ router.post('/reports/:id/confirm-stage', upload.array('files'), async (req, res
                 break;
 
             case 'technicalCompletion':
-                details.completionProof = {
-                    files: uploadedFiles,
-                    comment: comment,
-                    timestamp: new Date().toISOString(),
-                };
+                const installationStageIndex = details.updates.findIndex(u => u.id === 'installationComplete');
+                if (installationStageIndex !== -1) {
+                    details.updates[installationStageIndex].completed = true;
+                    details.updates[installationStageIndex].timestamp = new Date().toISOString();
+                    details.updates[installationStageIndex].comment = comment;
+                    details.updates[installationStageIndex].files = uploadedFiles;
+                }
+                delete details.completionProof; // Clean up old field
                 updatedReportPayload.content = JSON.stringify(details);
                 updatedReportPayload.project_workflow_status = 'TechnicallyCompleted';
                 break;
