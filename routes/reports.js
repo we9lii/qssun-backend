@@ -44,11 +44,12 @@ const safeJsonParse = (jsonString, defaultValue = {}) => {
 const fullReportQuery = `
     SELECT 
         r.id, r.user_id, r.report_type, r.content, r.status, r.created_at, r.evaluation, r.modifications,
-        r.assigned_team_id, r.project_workflow_status, r.adminNotes,
-        u.full_name as employee_name, u.department, u.username as employee_id_username, u.role as user_role
+        r.assigned_team_id, r.project_workflow_status, r.adminNotes, r.branch_id,
+        u.full_name as employee_name, u.department, u.username as employee_id_username, u.role as user_role,
+        b.name as branch_name
     FROM reports r
     LEFT JOIN users u ON r.user_id = u.id
-    LEFT JOIN branches b ON u.branch_id = r.branch_id
+    LEFT JOIN branches b ON r.branch_id = b.id
 `;
 
 const formatReportForFrontend = (reportRow, requestingUser = null) => {
@@ -58,7 +59,7 @@ const formatReportForFrontend = (reportRow, requestingUser = null) => {
     if (requestingUser && requestingUser.role === 'TeamLead' && reportRow.report_type === 'Project' && details.updates) {
         details.updates.forEach(update => {
             if (update.files && Array.isArray(update.files)) {
-                update.files = update.files.filter(file => file.uploadedBy === requestingUser.id);
+                update.files = update.files.filter(file => String(file.uploadedBy) === requestingUser.id);
             }
         });
     }
@@ -83,18 +84,15 @@ const formatReportForFrontend = (reportRow, requestingUser = null) => {
 
 // GET /api/reports
 router.get('/reports', async (req, res) => {
-    // In a real app with auth middleware, we would get the user from req.user
-    // For now, we fetch all and let the frontend do minor filtering. The main filtering is done here.
-    // To properly support this, the frontend would need to send user context or the server would use a session.
-    // This is a simulation based on the app's current structure.
     try {
         const [rows] = await db.query(`${fullReportQuery} ORDER BY r.created_at DESC`);
         
-        // This part is hypothetical. In a real scenario, you'd get the user from an auth token.
-        // const requestingUser = { id: req.headers['x-user-id'], role: req.headers['x-user-role'] };
-        // const reports = rows.map(row => formatReportForFrontend(row, requestingUser));
+        const requestingUser = { 
+            id: req.headers['x-user-id'], 
+            role: req.headers['x-user-role'] 
+        };
         
-        const reports = rows.map(row => formatReportForFrontend(row)); // Current implementation
+        const reports = rows.map(row => formatReportForFrontend(row, requestingUser.id && requestingUser.role ? requestingUser : null));
         res.json(reports);
     } catch (error) {
         console.error('Error in GET /api/reports:', error);
