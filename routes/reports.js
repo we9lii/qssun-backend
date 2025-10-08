@@ -219,6 +219,57 @@ router.put('/reports/:id', upload.any(), async (req, res) => {
     }
 });
 
+// POST /api/reports/:id/add-exception - Add an exception to a project report
+router.post('/reports/:id/add-exception', upload.array('files'), async (req, res) => {
+    const { id } = req.params;
+    const { comment, employeeId } = req.body;
+    try {
+        // 1. Fetch the report
+        const [reportRows] = await db.query('SELECT * FROM reports WHERE id = ?', [id]);
+        if (reportRows.length === 0) {
+            return res.status(404).json({ message: 'Project report not found.' });
+        }
+        const report = reportRows[0];
+        const details = safeJsonParse(report.content);
+
+        if (report.report_type !== 'Project') {
+            return res.status(400).json({ message: 'Exceptions can only be added to Project reports.' });
+        }
+
+        // 2. Upload files
+        let uploadedFiles = [];
+        if (req.files && req.files.length > 0) {
+            uploadedFiles = await Promise.all(req.files.map(file => uploadFileToCloudinary(file, employeeId, 'projects/exceptions')));
+        }
+        
+        // 3. Create the new exception object
+        const newException = {
+            id: `exc-${Date.now()}`,
+            comment,
+            files: uploadedFiles,
+            timestamp: new Date().toISOString(),
+        };
+
+        // 4. Add the exception to the details
+        if (!details.exceptions) {
+            details.exceptions = [];
+        }
+        details.exceptions.push(newException);
+
+        // 5. Update the report in the database
+        await db.query('UPDATE reports SET content = ? WHERE id = ?', [JSON.stringify(details), id]);
+
+        // 6. Return the fully updated report object
+        const [rows] = await db.query(`${fullReportQuery} WHERE r.id = ?`, [id]);
+        res.status(200).json(formatReportForFrontend(rows[0]));
+
+    } catch (error) {
+        console.error(`Error in POST /api/reports/${id}/add-exception:`, error);
+        res.status(500).json({ message: error.message || 'An internal server error occurred while adding the exception.' });
+    }
+});
+
+
 // POST /api/reports/:id/confirm-stage - A dedicated endpoint for project stage updates
 router.post('/reports/:id/confirm-stage', upload.array('files'), async (req, res) => {
     const { id } = req.params;
