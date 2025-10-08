@@ -229,7 +229,6 @@ router.post('/reports/:id/confirm-stage', upload.array('files'), async (req, res
     }
 
     try {
-        // 1. Fetch the current report
         const [reportRows] = await db.query('SELECT * FROM reports WHERE id = ?', [id]);
         if (reportRows.length === 0) {
             return res.status(404).json({ message: 'Project report not found.' });
@@ -240,48 +239,58 @@ router.post('/reports/:id/confirm-stage', upload.array('files'), async (req, res
         if (report.report_type !== 'Project' || !details.updates) {
             return res.status(400).json({ message: 'This action is only for Project reports.' });
         }
-
-        const stageIndex = details.updates.findIndex(u => u.id === stageId);
-        if (stageIndex === -1) {
-            return res.status(400).json({ message: `Stage with id '${stageId}' not found in project workflow.` });
-        }
         
-        // 2. Upload files to Cloudinary
         let uploadedFiles = [];
         if (req.files && req.files.length > 0) {
             uploadedFiles = await Promise.all(req.files.map(file => uploadFileToCloudinary(file, employeeId, 'projects')));
         }
         
-        // 3. Update the stage in the details object
-        const newUpdates = [...details.updates];
-        const currentStageFiles = newUpdates[stageIndex].files || [];
-        newUpdates[stageIndex] = {
-            ...newUpdates[stageIndex],
-            completed: true,
-            timestamp: new Date().toISOString(),
-            comment: comment || newUpdates[stageIndex].comment,
-            files: [...currentStageFiles, ...uploadedFiles],
-        };
-        details.updates = newUpdates;
+        const updatedReportPayload = {};
 
-        // 4. Determine the new overall project workflow status
-        let newWorkflowStatus = report.project_workflow_status;
-        if (stageId === 'concreteWorks') {
-            newWorkflowStatus = 'ConcreteWorksDone';
-        } else if (stageId === 'deliveryHandover') {
-            newWorkflowStatus = 'Completed';
+        // Handle virtual and real stages
+        switch (stageId) {
+            case 'concreteWorks':
+                const stageIndex = details.updates.findIndex(u => u.id === 'concreteWorks');
+                if (stageIndex !== -1) {
+                    details.updates[stageIndex] = {
+                        ...details.updates[stageIndex],
+                        completed: true,
+                        timestamp: new Date().toISOString(),
+                        comment: comment || details.updates[stageIndex].comment,
+                        files: [...(details.updates[stageIndex].files || []), ...uploadedFiles],
+                    };
+                    updatedReportPayload.content = JSON.stringify(details);
+                    updatedReportPayload.project_workflow_status = 'ConcreteWorksDone';
+                }
+                break;
+
+            case 'technicalCompletion':
+                details.completionProof = {
+                    files: uploadedFiles,
+                    comment: comment,
+                    timestamp: new Date().toISOString(),
+                };
+                updatedReportPayload.content = JSON.stringify(details);
+                updatedReportPayload.project_workflow_status = 'Completed';
+                break;
+            
+            case 'deliveryHandover_signed':
+                const handoverIndex = details.updates.findIndex(u => u.id === 'deliveryHandover');
+                if (handoverIndex !== -1 && uploadedFiles.length > 0) {
+                    if (!details.updates[handoverIndex].files) {
+                        details.updates[handoverIndex].files = [];
+                    }
+                    // Add the signed doc, assuming it's the second file
+                    details.updates[handoverIndex].files[1] = uploadedFiles[0];
+                    updatedReportPayload.content = JSON.stringify(details);
+                }
+                break;
+                
+            default:
+                return res.status(400).json({ message: `Stage action '${stageId}' is not recognized.` });
         }
         
-        // 5. Update the report in the database
-        const updatedReportPayload = {
-            content: JSON.stringify(details),
-            project_workflow_status: newWorkflowStatus,
-            ...(newWorkflowStatus === 'Completed' && { status: 'Approved' }),
-        };
-        
         await db.query('UPDATE reports SET ? WHERE id = ?', [updatedReportPayload, id]);
-
-        // 6. Fetch the full, formatted report to send back
         const [rows] = await db.query(`${fullReportQuery} WHERE r.id = ?`, [id]);
         res.status(200).json(formatReportForFrontend(rows[0]));
 
