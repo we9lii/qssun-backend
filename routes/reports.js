@@ -408,7 +408,13 @@ router.post('/reports/:id/notes', async (req, res) => {
         adminNotes.push(newNote);
 
         await db.query('UPDATE reports SET adminNotes = ? WHERE id = ?', [JSON.stringify(adminNotes), id]);
-        res.status(201).json(newNote);
+        
+        const [updatedReportRows] = await db.query(`${fullReportQuery} WHERE r.id = ?`, [id]);
+        if (updatedReportRows.length === 0) {
+            return res.status(404).json({ message: 'Report not found after update.' });
+        }
+        res.status(200).json(formatReportForFrontend(updatedReportRows[0]));
+
     } catch (error) {
         console.error(`Error adding note to report ${id}:`, error);
         res.status(500).json({ message: 'Failed to add note.' });
@@ -441,7 +447,12 @@ router.post('/reports/:id/notes/:noteId/reply', async (req, res) => {
         adminNotes[noteIndex].replies.push(newReply);
 
         await db.query('UPDATE reports SET adminNotes = ? WHERE id = ?', [JSON.stringify(adminNotes), id]);
-        res.status(201).json(newReply);
+        
+        const [updatedReportRows] = await db.query(`${fullReportQuery} WHERE r.id = ?`, [id]);
+        if (updatedReportRows.length === 0) {
+            return res.status(404).json({ message: 'Report not found after update.' });
+        }
+        res.status(200).json(formatReportForFrontend(updatedReportRows[0]));
     } catch (error) {
         console.error(`Error adding reply to note ${noteId}:`, error);
         res.status(500).json({ message: 'Failed to add reply.' });
