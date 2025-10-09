@@ -75,14 +75,23 @@ const uploadFileToCloudinary = (file, employeeId) => {
     });
 };
 
-// Helper to safely parse JSON.
-const safeJsonParse = (json, defaultValue) => {
-    if (typeof json !== 'string') return defaultValue;
-    try {
-        return JSON.parse(json);
-    } catch (e) {
-        return defaultValue;
+// Helper to safely parse JSON - CORRECTED VERSION
+const safeJsonParse = (data, defaultValue) => {
+    // If it's already a parsed object/array (from DB driver), return it directly.
+    if (typeof data === 'object' && data !== null) {
+        return data;
     }
+    // If it's a string, try to parse it.
+    if (typeof data === 'string') {
+        try {
+            return JSON.parse(data);
+        } catch (e) {
+            console.error("Failed to parse JSON string:", e);
+            return defaultValue;
+        }
+    }
+    // For all other types (null, undefined, etc.), return the default.
+    return defaultValue;
 };
 
 // GET /api/workflow-requests
