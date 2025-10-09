@@ -10,7 +10,8 @@ const app = express();
 const allowedOrigins = [
   process.env.FRONTEND_URL || 'https://qrs.qssun.solar',
   'http://localhost',       // For Capacitor WebView on Android
-  'capacitor://localhost'   // Another common origin for Capacitor
+  'capacitor://localhost',  // Another common origin for Capacitor
+  'https://localhost'       // CRITICAL: Add this for the secure Android scheme
 ];
 
 const corsOptions = {
