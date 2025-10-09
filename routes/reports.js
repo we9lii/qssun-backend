@@ -406,12 +406,12 @@ router.post('/reports/:id/notes', async (req, res) => {
         
         const newNote = {
             id: `note-${Date.now()}`,
-            authorId,
+            authorId: String(authorId),
             authorName,
             content,
             timestamp: new Date().toISOString(),
             replies: [],
-            readBy: [authorId],
+            readBy: [String(authorId)],
         };
         adminNotes.push(newNote);
 
@@ -457,7 +457,7 @@ router.post('/reports/:id/notes/:noteId/reply', async (req, res) => {
 
         const newReply = {
             id: `reply-${Date.now()}`,
-            authorId,
+            authorId: String(authorId),
             authorName,
             content,
             timestamp: new Date().toISOString(),
