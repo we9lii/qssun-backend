@@ -1,3 +1,4 @@
+// This is the full content of backend/routes/reports.js
 const express = require('express');
 const multer = require('multer');
 const router = express.Router();
@@ -424,7 +425,7 @@ router.post('/reports/:id/notes', async (req, res) => {
         connection = await db.getConnection();
         await connection.beginTransaction();
 
-        const [reportRows] = await connection.query('SELECT user_id, adminNotes FROM reports WHERE id = ? FOR UPDATE', [id]);
+        const [reportRows] = await connection.query('SELECT user_id, adminNotes, report_type, assigned_team_id FROM reports WHERE id = ? FOR UPDATE', [id]);
         if (reportRows.length === 0) {
             await connection.rollback();
             return res.status(404).json({ message: 'Report not found.' });
@@ -446,21 +447,32 @@ router.post('/reports/:id/notes', async (req, res) => {
 
         await connection.query('UPDATE reports SET adminNotes = ? WHERE id = ?', [JSON.stringify(adminNotes), id]);
         
-        // Notification Logic
-        const [authorRows] = await connection.query('SELECT role FROM users WHERE id = ?', [authorId]);
-        const noteAuthorRole = authorRows[0]?.role;
-        const reportAuthorId = report.user_id;
+        // --- Revamped Notification Logic ---
+        const notificationRecipients = new Set();
         const notificationLink = `/reports/${id}`;
+        const notificationMessage = `${authorName} أضاف ملاحظة على تقرير #${id}`;
 
-        if (noteAuthorRole === 'admin' && String(authorId) !== String(reportAuthorId)) {
-            await createNotification(connection, reportAuthorId, `${authorName} أضاف ملاحظة على تقريرك`, notificationLink);
-        } else if (noteAuthorRole !== 'admin') {
-            const [admins] = await connection.query('SELECT id FROM users WHERE role = ?', ['admin']);
-            for (const admin of admins) {
-                if (String(admin.id) !== String(authorId)) {
-                     await createNotification(connection, admin.id, `${authorName} أضاف ملاحظة على تقرير #${id}`, notificationLink);
-                }
+        // 1. Add report author
+        notificationRecipients.add(String(report.user_id));
+
+        // 2. Add all admins
+        const [admins] = await connection.query('SELECT id FROM users WHERE role = ?', ['admin']);
+        admins.forEach(admin => notificationRecipients.add(String(admin.id)));
+
+        // 3. If it's a project report, add the team lead
+        if (report.report_type === 'Project' && report.assigned_team_id) {
+            const [teamRows] = await connection.query('SELECT leader_id FROM technical_teams WHERE id = ?', [report.assigned_team_id]);
+            if (teamRows.length > 0) {
+                notificationRecipients.add(String(teamRows[0].leader_id));
             }
+        }
+
+        // 4. Remove the author of the current note
+        notificationRecipients.delete(String(authorId));
+
+        // 5. Create notifications
+        for (const recipientId of notificationRecipients) {
+            await createNotification(connection, recipientId, notificationMessage, notificationLink);
         }
         
         await connection.commit();
@@ -486,7 +498,7 @@ router.post('/reports/:id/notes/:noteId/reply', async (req, res) => {
         connection = await db.getConnection();
         await connection.beginTransaction();
 
-        const [reportRows] = await connection.query('SELECT user_id, adminNotes FROM reports WHERE id = ? FOR UPDATE', [id]);
+        const [reportRows] = await connection.query('SELECT user_id, adminNotes, report_type, assigned_team_id FROM reports WHERE id = ? FOR UPDATE', [id]);
         if (reportRows.length === 0) {
             await connection.rollback();
             return res.status(404).json({ message: 'Report not found.' });
@@ -513,14 +525,37 @@ router.post('/reports/:id/notes/:noteId/reply', async (req, res) => {
 
         await connection.query('UPDATE reports SET adminNotes = ? WHERE id = ?', [JSON.stringify(adminNotes), id]);
         
-        // Notification Logic
+        // --- Revamped Notification Logic for Replies ---
+        const notificationRecipients = new Set();
         const notificationLink = `/reports/${id}`;
-        const participants = new Set([adminNotes[noteIndex].authorId, ...adminNotes[noteIndex].replies.map(r => r.authorId)]);
-        
-        for (const participantId of participants) {
-            if(String(participantId) !== String(authorId)) {
-                await createNotification(connection, participantId, `${authorName} رد في محادثة بتقرير #${id}`, notificationLink);
+        const notificationMessage = `${authorName} رد في محادثة بتقرير #${id}`;
+
+        // 1. Add original report author
+        notificationRecipients.add(String(report.user_id));
+
+        // 2. Add all admins
+        const [admins] = await connection.query('SELECT id FROM users WHERE role = ?', ['admin']);
+        admins.forEach(admin => notificationRecipients.add(String(admin.id)));
+
+        // 3. If it's a project report, add the team lead
+        if (report.report_type === 'Project' && report.assigned_team_id) {
+            const [teamRows] = await connection.query('SELECT leader_id FROM technical_teams WHERE id = ?', [report.assigned_team_id]);
+            if (teamRows.length > 0) {
+                notificationRecipients.add(String(teamRows[0].leader_id));
             }
+        }
+
+        // 4. Add all previous participants in the thread
+        const note = adminNotes[noteIndex];
+        notificationRecipients.add(String(note.authorId));
+        note.replies.forEach(reply => notificationRecipients.add(String(reply.authorId)));
+
+        // 5. Remove the author of the current reply
+        notificationRecipients.delete(String(authorId));
+
+        // 6. Create notifications
+        for (const recipientId of notificationRecipients) {
+            await createNotification(connection, recipientId, notificationMessage, notificationLink);
         }
 
         await connection.commit();
