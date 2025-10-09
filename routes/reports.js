@@ -389,7 +389,7 @@ router.post('/reports/:id/confirm-stage', upload.array('files'), async (req, res
 // POST /api/reports/:id/notes - Add a new admin note
 router.post('/reports/:id/notes', async (req, res) => {
     const { id } = req.params;
-    const { content, targetRole, authorId, authorName } = req.body;
+    const { content, authorId, authorName } = req.body;
     let connection;
     try {
         connection = await db.getConnection();
@@ -409,7 +409,6 @@ router.post('/reports/:id/notes', async (req, res) => {
             authorId,
             authorName,
             content,
-            targetRole,
             timestamp: new Date().toISOString(),
             replies: [],
             readBy: [authorId],
