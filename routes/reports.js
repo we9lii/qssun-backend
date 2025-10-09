@@ -470,6 +470,7 @@ router.post('/reports/:id/notes/:noteId/reply', async (req, res) => {
             authorName,
             content,
             timestamp: new Date().toISOString(),
+            readBy: [String(authorId)],
         };
         adminNotes[noteIndex].replies.push(newReply);
 
@@ -484,6 +485,62 @@ router.post('/reports/:id/notes/:noteId/reply', async (req, res) => {
         if (connection) await connection.rollback();
         console.error(`Error adding reply to note ${noteId}:`, error);
         res.status(500).json({ message: 'Failed to add reply.' });
+    } finally {
+        if (connection) connection.release();
+    }
+});
+
+// POST /api/reports/:id/notes/read - Mark all notes as read
+router.post('/reports/:id/notes/read', async (req, res) => {
+    const { id } = req.params;
+    const { userId } = req.body;
+
+    if (!userId) {
+        return res.status(400).json({ message: 'User ID is required.' });
+    }
+
+    let connection;
+    try {
+        connection = await db.getConnection();
+        await connection.beginTransaction();
+
+        const [reportRows] = await connection.query('SELECT adminNotes FROM reports WHERE id = ? FOR UPDATE', [id]);
+        if (reportRows.length === 0) {
+            await connection.rollback();
+            return res.status(404).json({ message: 'Report not found.' });
+        }
+
+        const report = reportRows[0];
+        const adminNotes = safeJsonParse(report.adminNotes, []);
+        const strUserId = String(userId);
+
+        adminNotes.forEach(note => {
+            if (note.readBy && !note.readBy.includes(strUserId)) {
+                note.readBy.push(strUserId);
+            }
+            if (note.replies) {
+                note.replies.forEach(reply => {
+                    if (!reply.readBy) {
+                        reply.readBy = [];
+                    }
+                    if (!reply.readBy.includes(strUserId)) {
+                        reply.readBy.push(strUserId);
+                    }
+                });
+            }
+        });
+
+        await connection.query('UPDATE reports SET adminNotes = ? WHERE id = ?', [JSON.stringify(adminNotes), id]);
+        
+        await connection.commit();
+
+        const [updatedReportRows] = await db.query(`${fullReportQuery} WHERE r.id = ?`, [id]);
+        res.status(200).json(formatReportForFrontend(updatedReportRows[0]));
+
+    } catch (error) {
+        if (connection) await connection.rollback();
+        console.error(`Error marking notes as read for report ${id}:`, error);
+        res.status(500).json({ message: 'Failed to mark notes as read.' });
     } finally {
         if (connection) connection.release();
     }
