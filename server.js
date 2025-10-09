@@ -6,9 +6,23 @@ const db = require('./db.js'); // Import for health check
 
 const app = express();
 
-// --- CORS (User's preferred configuration) ---
+// --- CORS (Updated configuration for web and mobile) ---
+const allowedOrigins = [
+  process.env.FRONTEND_URL || 'https://qrs.qssun.solar',
+  'http://localhost',       // For Capacitor WebView on Android
+  'capacitor://localhost'   // Another common origin for Capacitor
+];
+
 const corsOptions = {
-  origin: process.env.FRONTEND_URL || 'https://qrs.qssun.solar',
+  origin: function (origin, callback) {
+    // allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.indexOf(origin) === -1) {
+      const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
+      return callback(new Error(msg), false);
+    }
+    return callback(null, true);
+  },
   optionsSuccessStatus: 200,
 };
 
@@ -52,5 +66,5 @@ const PORT = process.env.PORT || 10000;
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`✅ Server is listening on http://0.0.0.0:${PORT}`);
-  console.log(`🌐 Frontend allowed: ${corsOptions.origin}`);
+  console.log(`🌐 Allowed Origins: ${allowedOrigins.join(', ')}`);
 });
