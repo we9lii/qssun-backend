@@ -384,13 +384,26 @@ router.post('/reports/:id/confirm-stage', upload.array('files'), async (req, res
     }
 });
 
-// --- NEW ADMIN NOTES ENDPOINTS ---
+// --- NEW ADMIN NOTES ENDPOINTS (Robust Transactional Implementation) ---
 
 // POST /api/reports/:id/notes - Add a new admin note
 router.post('/reports/:id/notes', async (req, res) => {
     const { id } = req.params;
     const { content, targetRole, authorId, authorName } = req.body;
+    let connection;
     try {
+        connection = await db.getConnection();
+        await connection.beginTransaction();
+
+        const [reportRows] = await connection.query('SELECT adminNotes FROM reports WHERE id = ? FOR UPDATE', [id]);
+        if (reportRows.length === 0) {
+            await connection.rollback();
+            return res.status(404).json({ message: 'Report not found.' });
+        }
+
+        const report = reportRows[0];
+        const adminNotes = safeJsonParse(report.adminNotes, []);
+        
         const newNote = {
             id: `note-${Date.now()}`,
             authorId,
@@ -399,25 +412,23 @@ router.post('/reports/:id/notes', async (req, res) => {
             targetRole,
             timestamp: new Date().toISOString(),
             replies: [],
-            readBy: [authorId], // The author has read it
+            readBy: [authorId],
         };
+        adminNotes.push(newNote);
 
-        // Use JSON_ARRAY_APPEND to atomically add the new note
-        // The path '$.adminNotes' creates the array if it's NULL
-        await db.query(
-            "UPDATE reports SET adminNotes = JSON_ARRAY_APPEND(COALESCE(adminNotes, '[]'), '$', CAST(? AS JSON)) WHERE id = ?",
-            [JSON.stringify(newNote), id]
-        );
+        await connection.query('UPDATE reports SET adminNotes = ? WHERE id = ?', [JSON.stringify(adminNotes), id]);
         
+        await connection.commit();
+
         const [updatedReportRows] = await db.query(`${fullReportQuery} WHERE r.id = ?`, [id]);
-        if (updatedReportRows.length === 0) {
-            return res.status(404).json({ message: 'Report not found after update.' });
-        }
         res.status(200).json(formatReportForFrontend(updatedReportRows[0]));
 
     } catch (error) {
+        if (connection) await connection.rollback();
         console.error(`Error adding note to report ${id}:`, error);
         res.status(500).json({ message: 'Failed to add note.' });
+    } finally {
+        if (connection) connection.release();
     }
 });
 
@@ -425,7 +436,26 @@ router.post('/reports/:id/notes', async (req, res) => {
 router.post('/reports/:id/notes/:noteId/reply', async (req, res) => {
     const { id, noteId } = req.params;
     const { content, authorId, authorName } = req.body;
+    let connection;
     try {
+        connection = await db.getConnection();
+        await connection.beginTransaction();
+
+        const [reportRows] = await connection.query('SELECT adminNotes FROM reports WHERE id = ? FOR UPDATE', [id]);
+        if (reportRows.length === 0) {
+            await connection.rollback();
+            return res.status(404).json({ message: 'Report not found.' });
+        }
+        
+        const report = reportRows[0];
+        const adminNotes = safeJsonParse(report.adminNotes, []);
+        const noteIndex = adminNotes.findIndex(note => note.id === noteId);
+
+        if (noteIndex === -1) {
+            await connection.rollback();
+            return res.status(404).json({ message: "Note not found." });
+        }
+
         const newReply = {
             id: `reply-${Date.now()}`,
             authorId,
@@ -433,35 +463,21 @@ router.post('/reports/:id/notes/:noteId/reply', async (req, res) => {
             content,
             timestamp: new Date().toISOString(),
         };
+        adminNotes[noteIndex].replies.push(newReply);
 
-        // Find the index of the note to append the reply to
-        const [noteIndexResult] = await db.query(
-            "SELECT JSON_SEARCH(adminNotes, 'one', ?, NULL, '$[*].id') as note_path FROM reports WHERE id = ?",
-            [noteId, id]
-        );
+        await connection.query('UPDATE reports SET adminNotes = ? WHERE id = ?', [JSON.stringify(adminNotes), id]);
         
-        if (!noteIndexResult[0] || !noteIndexResult[0].note_path) {
-            return res.status(404).json({ message: "Note not found." });
-        }
-
-        // The path will be like "$[0]". We need to extract the index.
-        const notePath = noteIndexResult[0].note_path.replace(/"/g, ''); // Remove quotes
-        
-        // Append the reply to the `replies` array of the specific note
-        await db.query(
-            `UPDATE reports SET adminNotes = JSON_ARRAY_APPEND(adminNotes, '${notePath}.replies', CAST(? AS JSON)) WHERE id = ?`,
-            [JSON.stringify(newReply), id]
-        );
+        await connection.commit();
         
         const [updatedReportRows] = await db.query(`${fullReportQuery} WHERE r.id = ?`, [id]);
-        if (updatedReportRows.length === 0) {
-            return res.status(404).json({ message: 'Report not found after update.' });
-        }
         res.status(200).json(formatReportForFrontend(updatedReportRows[0]));
 
     } catch (error) {
+        if (connection) await connection.rollback();
         console.error(`Error adding reply to note ${noteId}:`, error);
         res.status(500).json({ message: 'Failed to add reply.' });
+    } finally {
+        if (connection) connection.release();
     }
 });
 
