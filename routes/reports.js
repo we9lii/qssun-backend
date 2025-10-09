@@ -9,6 +9,26 @@ const streamifier = require('streamifier');
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
+// Helper to create notifications
+const createNotification = async (connection, userId, message, link) => {
+    if (!userId) {
+        console.warn("Attempted to create notification for a null userId.");
+        return;
+    }
+    const notification = {
+        user_id: userId,
+        message,
+        link,
+        is_read: 0,
+    };
+    try {
+        await connection.query('INSERT INTO notifications SET ?', notification);
+    } catch (error) {
+        console.error(`Failed to insert notification for user ${userId}:`, error);
+    }
+};
+
+
 // Helper to upload a file to Cloudinary
 const uploadFileToCloudinary = (file, uploadedById, folder) => {
     return new Promise((resolve, reject) => {
@@ -404,7 +424,7 @@ router.post('/reports/:id/notes', async (req, res) => {
         connection = await db.getConnection();
         await connection.beginTransaction();
 
-        const [reportRows] = await connection.query('SELECT adminNotes FROM reports WHERE id = ? FOR UPDATE', [id]);
+        const [reportRows] = await connection.query('SELECT user_id, adminNotes FROM reports WHERE id = ? FOR UPDATE', [id]);
         if (reportRows.length === 0) {
             await connection.rollback();
             return res.status(404).json({ message: 'Report not found.' });
@@ -425,6 +445,23 @@ router.post('/reports/:id/notes', async (req, res) => {
         adminNotes.push(newNote);
 
         await connection.query('UPDATE reports SET adminNotes = ? WHERE id = ?', [JSON.stringify(adminNotes), id]);
+        
+        // Notification Logic
+        const [authorRows] = await connection.query('SELECT role FROM users WHERE id = ?', [authorId]);
+        const noteAuthorRole = authorRows[0]?.role;
+        const reportAuthorId = report.user_id;
+        const notificationLink = `/reports/${id}`;
+
+        if (noteAuthorRole === 'admin' && String(authorId) !== String(reportAuthorId)) {
+            await createNotification(connection, reportAuthorId, `${authorName} أضاف ملاحظة على تقريرك`, notificationLink);
+        } else if (noteAuthorRole !== 'admin') {
+            const [admins] = await connection.query('SELECT id FROM users WHERE role = ?', ['admin']);
+            for (const admin of admins) {
+                if (String(admin.id) !== String(authorId)) {
+                     await createNotification(connection, admin.id, `${authorName} أضاف ملاحظة على تقرير #${id}`, notificationLink);
+                }
+            }
+        }
         
         await connection.commit();
 
@@ -449,7 +486,7 @@ router.post('/reports/:id/notes/:noteId/reply', async (req, res) => {
         connection = await db.getConnection();
         await connection.beginTransaction();
 
-        const [reportRows] = await connection.query('SELECT adminNotes FROM reports WHERE id = ? FOR UPDATE', [id]);
+        const [reportRows] = await connection.query('SELECT user_id, adminNotes FROM reports WHERE id = ? FOR UPDATE', [id]);
         if (reportRows.length === 0) {
             await connection.rollback();
             return res.status(404).json({ message: 'Report not found.' });
@@ -476,6 +513,16 @@ router.post('/reports/:id/notes/:noteId/reply', async (req, res) => {
 
         await connection.query('UPDATE reports SET adminNotes = ? WHERE id = ?', [JSON.stringify(adminNotes), id]);
         
+        // Notification Logic
+        const notificationLink = `/reports/${id}`;
+        const participants = new Set([adminNotes[noteIndex].authorId, ...adminNotes[noteIndex].replies.map(r => r.authorId)]);
+        
+        for (const participantId of participants) {
+            if(String(participantId) !== String(authorId)) {
+                await createNotification(connection, participantId, `${authorName} رد في محادثة بتقرير #${id}`, notificationLink);
+            }
+        }
+
         await connection.commit();
         
         const [updatedReportRows] = await db.query(`${fullReportQuery} WHERE r.id = ?`, [id]);
