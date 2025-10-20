@@ -1,5 +1,6 @@
 const admin = require('./firebaseAdmin').admin; // Ensure we get the initialized admin object
 const db = require('../db.js');
+const fetch = require('node-fetch');
 
 /**
  * Saves or updates a user's FCM token in the database.
@@ -49,6 +50,16 @@ async function sendPushNotification(userId, title, body, data = {}) {
         }
 
         const tokens = rows.map(row => row.token);
+        // Fallback: use FCM legacy server key if Admin SDK is not initialized
+        if (!(admin && admin.apps && admin.apps.length > 0)) {
+            const serverKey = process.env.FCM_SERVER_KEY;
+            if (!serverKey) {
+                console.warn('FCM_SERVER_KEY not configured and Firebase Admin not initialized. Skipping push notification.');
+                return;
+            }
+            await sendViaLegacyFCM(tokens, title, body, data, userId);
+            return;
+        }
 
         const message = {
             notification: { title, body },
@@ -75,7 +86,53 @@ async function sendPushNotification(userId, title, body, data = {}) {
     }
 }
 
-async function handleFailedToken(token, error) {
+async function sendViaLegacyFCM(tokens, title, body, data, userId) {
+    try {
+        const payload = {
+            registration_ids: tokens,
+            notification: { title, body },
+            data: { ...data, click_action: 'FLUTTER_NOTIFICATION_CLICK' }
+        };
+
+        const res = await fetch('https://fcm.googleapis.com/fcm/send', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `key=${process.env.FCM_SERVER_KEY}`
+            },
+            body: JSON.stringify(payload)
+        });
+
+        if (!res.ok) {
+            const text = await res.text();
+            throw new Error(`Legacy FCM request failed: ${text}`);
+        }
+
+        const result = await res.json();
+        console.log(`Legacy FCM sent to user ${userId}. Success: ${result.success}, Failure: ${result.failure}`);
+
+        if (result.failure > 0 && Array.isArray(result.results)) {
+            const failures = [];
+            result.results.forEach((item, idx) => {
+                if (item && item.error) {
+                    const mapped = mapLegacyErrorCode(item.error);
+                    failures.push(handleFailedToken(tokens[idx], { code: mapped, message: item.error }));
+                }
+            });
+            await Promise.all(failures);
+        }
+    } catch (error) {
+        console.error(`Error sending legacy FCM to user ${userId}:`, error);
+    }
+}
+
+function mapLegacyErrorCode(error) {
+    switch (error) {
+        case 'InvalidRegistration': return 'messaging/invalid-registration-token';
+        case 'NotRegistered': return 'messaging/registration-token-not-registered';
+        default: return error || 'unknown';
+    }
+}async function handleFailedToken(token, error) {
     console.warn(`Failed to send to token: ${token}`, error.message);
     const invalidTokenCodes = [
         'messaging/invalid-registration-token',
@@ -95,3 +152,5 @@ module.exports = {
     saveTokenToDatabase,
     sendPushNotification,
 };
+
+
