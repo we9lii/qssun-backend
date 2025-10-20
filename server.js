@@ -3,7 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const allRoutes = require('./routes');
 const db = require('./db.js');
-const { initializeFirebase } = require('./firebaseAdmin.js');
+const { initializeFirebase } = require('./routes/firebaseAdmin.js');
 
 const app = express();
 
@@ -66,3 +66,4 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`✅ Server is listening on http://0.0.0.0:${PORT}`);
   console.log(`🌐 Allowed Origins: ${allowedOrigins.join(', ')}`);
 });
+
