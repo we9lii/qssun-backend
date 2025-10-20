@@ -4,7 +4,7 @@ const router = express.Router();
 const db = require('../db.js');
 const { cloudinary } = require('../cloudinary.js');
 const streamifier = require('streamifier');
-const { sendPushNotification } = require('../pushService');
+const { sendPushNotification } = require('./pushService');
 
 // Setup multer for memory storage
 const storage = multer.memoryStorage();

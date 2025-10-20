@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { saveTokenToDatabase } = require('../pushService');
+const { saveTokenToDatabase } = require('./pushService');
 
 // POST /api/fcm-token
 router.post('/', async (req, res) => {
