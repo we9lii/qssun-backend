@@ -1,10 +1,10 @@
-// This is the full content of backend/routes/reports.js
 const express = require('express');
 const multer = require('multer');
 const router = express.Router();
 const db = require('../db.js');
 const { cloudinary } = require('../cloudinary.js');
 const streamifier = require('streamifier');
+const { sendPushNotification } = require('../pushService');
 
 // Setup multer for memory storage
 const storage = multer.memoryStorage();
@@ -470,9 +470,11 @@ router.post('/reports/:id/notes', async (req, res) => {
         // 4. Remove the author of the current note
         notificationRecipients.delete(String(authorId));
 
-        // 5. Create notifications
+        // 5. Create notifications (in-app and push)
         for (const recipientId of notificationRecipients) {
             await createNotification(connection, recipientId, notificationMessage, notificationLink);
+            // Send push notification
+            await sendPushNotification(recipientId, 'ملاحظة جديدة', notificationMessage, { link: notificationLink });
         }
         
         await connection.commit();
@@ -553,9 +555,11 @@ router.post('/reports/:id/notes/:noteId/reply', async (req, res) => {
         // 5. Remove the author of the current reply
         notificationRecipients.delete(String(authorId));
 
-        // 6. Create notifications
+        // 6. Create notifications (in-app and push)
         for (const recipientId of notificationRecipients) {
             await createNotification(connection, recipientId, notificationMessage, notificationLink);
+            // Send push notification
+            await sendPushNotification(recipientId, 'رد جديد', notificationMessage, { link: notificationLink });
         }
 
         await connection.commit();
