@@ -1,5 +1,5 @@
 const admin = require('./firebaseAdmin').admin; // Ensure we get the initialized admin object
-const db = require('./db.js');
+const db = require('../db.js');
 
 /**
  * Saves or updates a user's FCM token in the database.
