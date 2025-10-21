@@ -23,6 +23,7 @@ router.get('/users', async (req, res) => {
             employeeType: user.employee_type || 'Technician',
             hasImportExportPermission: !!user.has_import_export_permission,
             isFirstLogin: !!user.is_first_login,
+            allowedReportTypes: (() => { try { return JSON.parse(user.allowed_report_types || '[]'); } catch { return []; } })(),
         }));
 
         res.json(users);
@@ -34,7 +35,7 @@ router.get('/users', async (req, res) => {
 
 // POST /api/users - Create a new user
 router.post('/users', async (req, res) => {
-    const { employeeId, password, email, name, phone, role, branch, department, position, employeeType, hasImportExportPermission } = req.body;
+    const { employeeId, password, email, name, phone, role, branch, department, position, employeeType, hasImportExportPermission, allowedReportTypes } = req.body;
 
     try {
         let branchId = null;
@@ -63,6 +64,7 @@ router.post('/users', async (req, res) => {
             has_import_export_permission: hasImportExportPermission ? 1 : 0,
             is_first_login: 1, // New users should complete their profile
             is_active: 1,
+            allowed_report_types: Array.isArray(allowedReportTypes) ? JSON.stringify(allowedReportTypes) : null,
         };
 
         const [result] = await db.query('INSERT INTO users SET ?', newUser);
@@ -85,6 +87,7 @@ router.post('/users', async (req, res) => {
             employeeType: user.employee_type,
             hasImportExportPermission: !!user.has_import_export_permission,
             isFirstLogin: !!user.is_first_login,
+            allowedReportTypes: (() => { try { return JSON.parse(user.allowed_report_types || '[]'); } catch { return []; } })(),
         };
 
         res.status(201).json(userForFrontend);
@@ -98,7 +101,7 @@ router.post('/users', async (req, res) => {
 // PUT /api/users/:id - Update an existing user
 router.put('/users/:id', async (req, res) => {
     const { id } = req.params;
-    const { employeeId, email, name, phone, role, branch, department, position, employeeType, hasImportExportPermission } = req.body;
+    const { employeeId, email, name, phone, role, branch, department, position, employeeType, hasImportExportPermission, allowedReportTypes } = req.body;
 
     try {
         let branchId = null;
@@ -122,6 +125,7 @@ router.put('/users/:id', async (req, res) => {
             position: position,
             employee_type: employeeType,
             has_import_export_permission: hasImportExportPermission ? 1 : 0,
+            allowed_report_types: Array.isArray(allowedReportTypes) ? JSON.stringify(allowedReportTypes) : null,
         };
 
         const [result] = await db.query('UPDATE users SET ? WHERE id = ?', [updatedUser, id]);
@@ -146,6 +150,7 @@ router.put('/users/:id', async (req, res) => {
             employeeType: user.employee_type,
             hasImportExportPermission: !!user.has_import_export_permission,
             isFirstLogin: !!user.is_first_login,
+            allowedReportTypes: (() => { try { return JSON.parse(user.allowed_report_types || '[]'); } catch { return []; } })(),
         };
 
         res.json(userForFrontend);

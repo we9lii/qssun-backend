@@ -10,6 +10,10 @@ const app = express();
 // Initialize Firebase Admin SDK
 initializeFirebase();
 
+// Ensure DB schema is ready (add missing columns if needed)
+const { ensureSchema } = require('./schema.js');
+(async () => { try { await ensureSchema(); } catch (e) { console.error('Schema init error:', e); } })();
+
 // --- CORS Configuration ---
 const allowedOrigins = [
   process.env.FRONTEND_URL || 'https://qrs.qssun.solar',
