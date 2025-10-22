@@ -1,4 +1,4 @@
-require('dotenv').config();
+﻿require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const allRoutes = require('./routes');
@@ -18,6 +18,10 @@ const { ensureSchema } = require('./schema.js');
 const allowedOrigins = [
   process.env.FRONTEND_URL || 'https://qrs.qssun.solar',
   'http://localhost',
+  'http://localhost:4176',
+  'http://localhost:4174',
+  'http://localhost:3000',
+  'http://localhost:3001',
   'capacitor://localhost',
   'https://localhost'
 ];
@@ -34,6 +38,7 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
@@ -67,7 +72,8 @@ app.use((err, req, res, next) => {
 // --- Port Binding for Render ---
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`✅ Server is listening on http://0.0.0.0:${PORT}`);
-  console.log(`🌐 Allowed Origins: ${allowedOrigins.join(', ')}`);
+  console.log(`âœ… Server is listening on http://0.0.0.0:${PORT}`);
+  console.log(`ًںŒگ Allowed Origins: ${allowedOrigins.join(', ')}`);
 });
+
 

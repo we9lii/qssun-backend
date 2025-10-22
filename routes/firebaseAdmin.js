@@ -8,7 +8,8 @@ function initializeFirebase() {
     try {
         const serviceAccountKey = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
         if (!serviceAccountKey) {
-            throw new Error('FIREBASE_SERVICE_ACCOUNT_KEY environment variable is not set or empty.');
+            console.warn('⚠️ FIREBASE_SERVICE_ACCOUNT_KEY is not set. Skipping Firebase Admin initialization for local/dev.');
+            return; // Do not block the server when Firebase is not configured
         }
 
         const serviceAccount = JSON.parse(serviceAccountKey);
@@ -21,8 +22,7 @@ function initializeFirebase() {
 
     } catch (error) {
         console.error('❌ Firebase Admin SDK initialization failed:', error.message);
-        // We throw the error to stop the server if Firebase is critical.
-        throw error; 
+        console.warn('Continuing without Firebase Admin (non-critical for basic API).');
     }
 }
 
