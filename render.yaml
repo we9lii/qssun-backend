@@ -1,0 +1,16 @@
+﻿services:
+  - type: web
+    name: qssun-reports-backend
+    env: node
+    plan: free
+    rootDir: .
+    buildCommand: npm install
+    startCommand: npm start
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: 18
+      - key: FRONTEND_URL
+        value: https://qrs.qssun.solar
+      - key: PORT
+        value: 10000
