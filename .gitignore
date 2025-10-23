@@ -1,0 +1,22 @@
+﻿# Node/Express
+node_modules/
+npm-debug.log*
+**/*.log
+
+# Env files
+.env
+.env.*
+
+# Build & cache
+dist/
+.tmp/
+tmp/
+coverage/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Misc
+*.zip
+render.yaml
