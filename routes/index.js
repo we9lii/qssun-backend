@@ -2,13 +2,14 @@ const express = require('express');
 const router = express.Router();
 
 const authRoutes = require('./auth.js');
-const reportRoutes = require('./reports.js');
-const userRoutes = require('./users.js');
-const branchRoutes = require('./branches.js');
-const workflowRoutes = require('./workflows.js');
-const teamRoutes = require('./teams.js');
-const notificationRoutes = require('./notifications.js');
-const fcmRoutes = require('./fcm.js'); // For Push Notifications
+const reportRoutes = require('./reports');
+const userRoutes = require('./users');
+const branchRoutes = require('./branches');
+const workflowRoutes = require('./workflows');
+const teamRoutes = require('./teams');
+const notificationRoutes = require('./notifications');
+const fcmRoutes = require('./fcm');
+const packageRoutes = require('./packages');
 
 router.use(authRoutes);
 router.use(reportRoutes);
@@ -17,6 +18,6 @@ router.use(branchRoutes);
 router.use(workflowRoutes);
 router.use(teamRoutes);
 router.use(notificationRoutes);
-router.use('/fcm-token', fcmRoutes); // Use the new FCM route
-
+router.use('/fcm-token', fcmRoutes);
+router.use(packageRoutes);
 module.exports = router;
