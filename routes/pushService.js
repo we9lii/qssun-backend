@@ -4,29 +4,19 @@ const fetch = require('node-fetch');
 
 /**
  * Saves or updates a user's FCM token in the database.
+ * Uses an UPSERT to avoid duplicate key errors and noisy logs.
  * @param {string} userId The ID of the user.
  * @param {string} token The FCM token from the device.
  */
 async function saveTokenToDatabase(userId, token) {
     try {
-        const [existing] = await db.query(
-            'SELECT id FROM fcm_tokens WHERE user_id = ? AND token = ?',
+        await db.query(
+            `INSERT INTO fcm_tokens (user_id, token, updated_at)
+             VALUES (?, ?, NOW())
+             ON DUPLICATE KEY UPDATE updated_at = NOW()`,
             [userId, token]
         );
-
-        if (existing.length === 0) {
-            await db.query(
-                'INSERT INTO fcm_tokens (user_id, token) VALUES (?, ?)',
-                [userId, token]
-            );
-            console.log(`New FCM token saved for user ${userId}`);
-        } else {
-            await db.query(
-                'UPDATE fcm_tokens SET updated_at = NOW() WHERE id = ?',
-                [existing[0].id]
-            );
-            console.log(`FCM token for user ${userId} timestamp updated.`);
-        }
+        console.log(`FCM token saved/updated for user ${userId}`);
     } catch (error) {
         console.error(`Error saving FCM token for user ${userId}:`, error);
         throw error;

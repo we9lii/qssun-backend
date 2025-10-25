@@ -18,17 +18,40 @@ const { ensureSchema } = require('./schema.js');
 const allowedOrigins = [
   process.env.FRONTEND_URL || 'https://qrs.qssun.solar',
   'http://localhost',
-  'http://localhost:4176',
+  'http://localhost:4173',
   'http://localhost:4174',
+  'http://localhost:4176',
   'http://localhost:3000',
   'http://localhost:3001',
+  'http://127.0.0.1:4173',
   'capacitor://localhost',
+  'ionic://localhost',
   'https://localhost'
 ];
 
+function isAllowedOrigin(origin) {
+  if (!origin) return true; // mobile/webview or same-origin
+  if (allowedOrigins.includes(origin)) return true;
+  try {
+    const { hostname, protocol } = new URL(origin);
+    // Allow localhost on any port
+    if (/^https?:$/.test(protocol)) {
+      if (hostname === 'localhost' || hostname === '127.0.0.1') return true;
+      // Allow any Render app domain
+      if (hostname.endsWith('.onrender.com')) return true;
+      // Allow qssun.solar root and subdomains
+      if (hostname.endsWith('qssun.solar')) return true;
+    }
+    return false;
+  } catch {
+    // Non-HTTP origins for hybrid apps
+    return origin === 'capacitor://localhost' || origin === 'ionic://localhost';
+  }
+}
+
 const corsOptions = {
   origin: function (origin, callback) {
-    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+    if (isAllowedOrigin(origin)) {
       callback(null, true);
     } else {
       callback(new Error('Not allowed by CORS'));
@@ -75,5 +98,4 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`âœ… Server is listening on http://0.0.0.0:${PORT}`);
   console.log(`ًںŒگ Allowed Origins: ${allowedOrigins.join(', ')}`);
 });
-
 
