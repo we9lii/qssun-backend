@@ -4,6 +4,55 @@ const db = require('../db.js');
 const bcrypt = require('bcrypt');
 const saltRounds = 10; // Standard salt rounds for bcrypt
 
+// ==== Helpers (top-level) ====
+// Normalize boolean/flag values from various input forms to 0/1
+const normalizeFlag = (val) => {
+  if (val === undefined) return undefined;
+  const s = String(val).trim().toLowerCase();
+  if (s === '1' || s === 'true' || s === 'yes' || s === 'on') return 1;
+  if (s === '0' || s === 'false' || s === 'no' || s === 'off') return 0;
+  return val ? 1 : 0;
+};
+
+// Read a flag from either camelCase or snake_case key
+const getFlag = (body, camel, snake) => {
+  const raw = body[camel] ?? body[snake];
+  return normalizeFlag(raw);
+};
+
+// Map frontend role variants to DB values
+const mapRoleToDb = (roleStr) => {
+  const v = (roleStr || '').toLowerCase().trim();
+  switch (v) {
+    case 'admin': return 'admin';
+    case 'employee': return 'employee';
+    case 'teamlead':
+    case 'team_lead': return 'team_lead';
+    case 'branchmanager':
+    case 'branch_manager': return 'branch_manager';
+    case 'hr manager':
+    case 'hr_manager':
+    case 'hrmanager': return 'hr_manager';
+    default: return v;
+  }
+};
+
+// Map DB role to frontend display value
+const mapRoleForFrontend = (dbRole) => {
+  switch (dbRole) {
+    case 'admin': return 'Admin';
+    case 'employee': return 'Employee';
+    case 'team_lead': return 'TeamLead';
+    case 'branch_manager': return 'Branch Manager';
+    case 'hr_manager': return 'HR Manager';
+    default:
+      return (dbRole || 'Employee').charAt(0).toUpperCase() + (dbRole || 'Employee').slice(1);
+  }
+};
+
+// Allowed roles set for safe updates
+const KNOWN_ROLES = new Set(['admin','employee','team_lead','branch_manager','hr_manager']);
+
 // GET /api/users
 router.get('/users', async (req, res) => {
     try {
@@ -22,10 +71,13 @@ router.get('/users', async (req, res) => {
             joinDate: user.created_at ? new Date(user.created_at).toISOString() : new Date().toISOString(),
             employeeType: user.employee_type || 'Technician',
             hasImportExportPermission: !!user.has_import_export_permission,
+            hasPackageManagementPermission: !!user.has_package_management_permission,
             isFirstLogin: !!user.is_first_login,
             allowedReportTypes: (() => { try { return JSON.parse(user.allowed_report_types || '[]'); } catch { return []; } })(),
         }));
 
+        // Avoid cached stale responses for user list
+        res.set('Cache-Control', 'no-store');
         res.json(users);
     } catch (error) {
         console.error('Error fetching users:', error);
@@ -35,9 +87,10 @@ router.get('/users', async (req, res) => {
 
 // POST /api/users - Create a new user
 router.post('/users', async (req, res) => {
-    const { employeeId, password, email, name, phone, role, branch, department, position, employeeType, hasImportExportPermission, allowedReportTypes } = req.body;
+    const { employeeId, password, email, name, phone, role, branch, department, position, employeeType, allowedReportTypes } = req.body;
 
     try {
+        console.log('POST /api/users payload:', req.body);
         let branchId = null;
         if (branch) {
             const [branchRows] = await db.query('SELECT id FROM branches WHERE name = ?', [branch]);
@@ -49,19 +102,24 @@ router.post('/users', async (req, res) => {
         }
         
         const hashedPassword = await bcrypt.hash(password, saltRounds);
-        
+        // Flags: accept both camelCase and snake_case, normalize to 0/1
+        const has_import_export_permission = getFlag(req.body, 'hasImportExportPermission', 'has_import_export_permission');
+        const has_package_management_permission = getFlag(req.body, 'hasPackageManagementPermission', 'has_package_management_permission');
+        const mappedRole = mapRoleToDb(role);
+
         const newUser = {
             username: employeeId,
             password: hashedPassword,
             email: email,
             full_name: name,
             phone: phone,
-            role: role.toLowerCase(), // Store role in lowercase
+            role: mappedRole || (role ? role.toLowerCase() : 'employee'), // Store role in lowercase (mapped if possible)
             branch_id: branchId,
             department: department,
             position: position,
             employee_type: employeeType,
-            has_import_export_permission: hasImportExportPermission ? 1 : 0,
+            has_import_export_permission: has_import_export_permission ?? 0,
+            has_package_management_permission: has_package_management_permission ?? 0,
             is_first_login: 1, // New users should complete their profile
             is_active: 1,
             allowed_report_types: Array.isArray(allowedReportTypes) ? JSON.stringify(allowedReportTypes) : null,
@@ -79,13 +137,14 @@ router.post('/users', async (req, res) => {
             name: user.full_name,
             email: user.email,
             phone: user.phone,
-            role: user.role ? user.role.charAt(0).toUpperCase() + user.role.slice(1) : 'Employee',
+            role: user.role ? mapRoleForFrontend(user.role) : 'Employee',
             branch: user.branch_name || 'N/A',
             department: user.department || 'N/A',
             position: user.position || 'N/A',
             joinDate: new Date(user.created_at).toISOString(),
             employeeType: user.employee_type,
             hasImportExportPermission: !!user.has_import_export_permission,
+            hasPackageManagementPermission: !!user.has_package_management_permission,
             isFirstLogin: !!user.is_first_login,
             allowedReportTypes: (() => { try { return JSON.parse(user.allowed_report_types || '[]'); } catch { return []; } })(),
         };
@@ -101,37 +160,7 @@ router.post('/users', async (req, res) => {
 // PUT /api/users/:id - Update an existing user
 router.put('/users/:id', async (req, res) => {
     const { id } = req.params;
-    const { employeeId, email, name, phone, role, branch, department, position, employeeType, hasImportExportPermission, allowedReportTypes } = req.body;
-
-    // Helper to map frontend role to DB value
-    const mapRoleToDb = (roleStr) => {
-      const v = (roleStr || '').toLowerCase().trim();
-      switch (v) {
-        case 'admin': return 'admin';
-        case 'employee': return 'employee';
-        case 'teamlead':
-        case 'team_lead': return 'team_lead';
-        case 'branchmanager':
-        case 'branch_manager': return 'branch_manager';
-        case 'hr manager':
-        case 'hr_manager':
-        case 'hrmanager': return 'hr_manager';
-        default: return v;
-      }
-    };
-
-    // Helper to map DB role to frontend enum
-    const mapRoleForFrontend = (dbRole) => {
-      switch (dbRole) {
-        case 'admin': return 'Admin';
-        case 'employee': return 'Employee';
-        case 'team_lead': return 'TeamLead';
-        case 'branch_manager': return 'Branch Manager';
-        case 'hr_manager': return 'HR Manager';
-        default:
-          return (dbRole || 'Employee').charAt(0).toUpperCase() + (dbRole || 'Employee').slice(1);
-      }
-    };
+    const { employeeId, email, name, phone, role, branch, department, position, employeeType, hasImportExportPermission, hasPackageManagementPermission, allowedReportTypes } = req.body;
 
     try {
         console.log('PUT /api/users/:id payload:', req.body);
@@ -145,9 +174,19 @@ router.put('/users/:id', async (req, res) => {
         if (department !== undefined) updates.department = department;
         if (position !== undefined) updates.position = position;
         if (employeeType !== undefined) updates.employee_type = employeeType;
-        if (hasImportExportPermission !== undefined) updates.has_import_export_permission = hasImportExportPermission ? 1 : 0;
+        // Support both camelCase and snake_case keys for permissions
+        const importExportFlag = normalizeFlag(hasImportExportPermission ?? req.body.has_import_export_permission);
+        const packageMgmtFlag  = normalizeFlag(hasPackageManagementPermission ?? req.body.has_package_management_permission);
+        if (importExportFlag !== undefined) updates.has_import_export_permission = importExportFlag;
+        if (packageMgmtFlag !== undefined) updates.has_package_management_permission = packageMgmtFlag;
         if (allowedReportTypes !== undefined) updates.allowed_report_types = Array.isArray(allowedReportTypes) ? JSON.stringify(allowedReportTypes) : null;
-        if (role !== undefined) updates.role = mapRoleToDb(role);
+        if (role !== undefined) {
+          const mapped = mapRoleToDb(role);
+          // Only update role if it maps to a known value; otherwise, skip to avoid enum errors
+          if (KNOWN_ROLES.has(mapped)) {
+            updates.role = mapped;
+          }
+        }
 
         // Branch handling only if provided
         if (branch !== undefined) {
@@ -191,6 +230,7 @@ router.put('/users/:id', async (req, res) => {
             joinDate: new Date(user.created_at).toISOString(),
             employeeType: user.employee_type,
             hasImportExportPermission: !!user.has_import_export_permission,
+            hasPackageManagementPermission: !!user.has_package_management_permission,
             isFirstLogin: !!user.is_first_login,
             allowedReportTypes: (() => { try { return JSON.parse(user.allowed_report_types || '[]'); } catch { return []; } })(),
         };
