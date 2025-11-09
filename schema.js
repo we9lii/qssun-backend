@@ -1,4 +1,4 @@
-﻿const db = require('./db.js');
+const db = require('./db.js');
 
 async function ensureSchema() {
   try {
@@ -8,7 +8,7 @@ async function ensureSchema() {
       await db.query("ALTER TABLE users ADD COLUMN allowed_report_types TEXT NULL");
       console.log(' Added column users.allowed_report_types');
     } else {
-      console.log('ℹ Column users.allowed_report_types already exists');
+      console.log('? Column users.allowed_report_types already exists');
     }
 
     // 1.b) Ensure users.has_purchase_management_permission exists (no information_schema)
@@ -17,7 +17,7 @@ async function ensureSchema() {
       await db.query("ALTER TABLE users ADD COLUMN has_purchase_management_permission TINYINT(1) NOT NULL DEFAULT 0");
       console.log(' Added column users.has_purchase_management_permission');
     } else {
-      console.log('ℹ Column users.has_purchase_management_permission already exists');
+      console.log('? Column users.has_purchase_management_permission already exists');
     }
 
     // 2) Ensure package_requests table exists
@@ -128,11 +128,49 @@ async function ensureSchema() {
         INDEX(actor_id)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     `);
-    console.log(' Ensured table purchase_logs exists');
+    // 8) Ensure instant_expense_sheets table exists (Custody header for Instant Expenses)
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS instant_expense_sheets (
+        id VARCHAR(32) PRIMARY KEY,
+        custody_number VARCHAR(128),
+        custody_amount DECIMAL(12,2) NOT NULL DEFAULT 0,
+        user_id INT,
+        status VARCHAR(16) DEFAULT 'OPEN', -- OPEN | CLOSED
+        notes TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        last_modified DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX(user_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+    console.log(' Ensured table instant_expense_sheets exists');
 
+    // 9) Ensure instant_expense_lines table exists (Line items for Instant Expenses)
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS instant_expense_lines (
+        id VARCHAR(40) PRIMARY KEY,
+        sheet_id VARCHAR(32) NOT NULL,
+        date DATE,
+        company VARCHAR(255),
+        invoice_number VARCHAR(64),
+        description TEXT,
+        reason VARCHAR(64) NOT NULL,
+        amount DECIMAL(12,2) NOT NULL DEFAULT 0,
+        bank_fees DECIMAL(12,2),
+        buyer_name VARCHAR(255),
+        notes TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        INDEX(sheet_id),
+        INDEX(reason),
+        INDEX(date)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+    console.log(' Ensured table instant_expense_lines exists');
   } catch (err) {
     console.error(' Schema check/add failed:', err.message);
   }
 }
 
 module.exports = { ensureSchema };
+
+
+
